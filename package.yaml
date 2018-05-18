@@ -26,6 +26,7 @@ dependencies:
 - accelerate-llvm
 - accelerate-llvm-native
 - accelerate-llvm-ptx
+- lens-accelerate
 - mwc-random-accelerate
 - accelerate-blas
 - spool

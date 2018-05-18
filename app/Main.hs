@@ -37,12 +37,10 @@ import Prelude as P
 
 import Inits
 
-
-
+numI, numE, numNeurons :: Int
 numI = 20
 numE = 100
 numNeurons = numE + numI
-
 
 f :: Exp Int -> Exp Int -> Exp Int -> Exp Int
 f delay spike incomingSpike = incomingSpike * bit delay .|. spike
@@ -77,8 +75,8 @@ main8 =
       m = A.fromFunction (Z :. 10 :. 10) (\(Z :. y :. x) -> P.fromIntegral $ y * x) :: Array DIM2 Float
     print $ run $ A.zipWith (*) (A.use m) (A.use m)
 
-main :: IO ()
-main =
+main10 :: IO ()
+main10 =
   do
     !arr <- randomArray (exponential (5)) (Z :. 120 :. 120 :: DIM2) :: IO (Array DIM2 Float)
     let !arr2 = run1 (A.map (\v -> v A.> 20 A.? (1,A.max 1 $ A.round v))) arr :: Array DIM2 Int
@@ -136,8 +134,8 @@ main3 =
     print $ run1 h arr
     print "stuff"
 
-main2 :: IO ()
-main2 =
+main :: IO ()
+main =
   do
     delays <- randomArray (uniformR (0,10)) (Z :. 10 :. 10 :: DIM2) :: IO (Array DIM2 Int)
     let

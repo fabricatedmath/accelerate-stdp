@@ -45,6 +45,7 @@ extra-deps:
 - accelerate-llvm-native-1.2.0.0
 - accelerate-llvm-ptx-1.2.0.0
 - accelerate-blas-0.2.0.0
+- lens-accelerate-0.2.0.0
 - spool-0.1
 
 

@@ -4,6 +4,7 @@
 module Inits
   (initDelay, initW, initWff
   , initPosNoiseIn, initNegNoiseIn
+  , loadDataset
   , exponential, poisson) where
 
 import Data.Array.Accelerate
@@ -16,20 +17,29 @@ import Data.Array.Accelerate
 
 import qualified Data.Array.Accelerate as A
 
-import Data.Array.Accelerate.System.Random.MWC
+import Data.Array.Accelerate.IO.Data.Vector.Storable (fromVectors)
+
 import Data.Array.Accelerate.LLVM.PTX
+import Data.Array.Accelerate.System.Random.MWC
+
+import qualified Data.ByteString as BS
 
 import Data.Random hiding (uniform)
 import qualified Data.Random.Distribution.Exponential as R
 import qualified Data.Random.Distribution.Poisson as R
 
+import qualified Data.Vector.Storable as V
+import Data.Vector.Storable.ByteString
+
 import Prelude as P
 
+-- | exponential generator for accelerate random array
 exponential
   :: (RandomSource m s, P.Floating a, Distribution StdUniform a)
   => a -> p -> s -> m a
 exponential beta = const $ runRVar $ R.exponential beta
 
+-- | poisson generator for accelerate random array
 poisson
   :: (RandomSource m s, P.Floating a, Distribution (R.Poisson b) a)
   => b -> p -> s -> m a
@@ -41,6 +51,7 @@ maxDelayDT = 20
 delayBeta :: Float
 delayBeta = 5
 
+-- | Initial Delay Matrix
 initDelay :: DIM2 -> IO (Array DIM2 Int)
 initDelay dim =
   do
@@ -61,13 +72,15 @@ wieMax = 0.5 * 4.32 / latConnMult
 wiiMax = 0.5 * 4.32 / latConnMult
 
 initW
-  :: Int --num excitory
-  -> Int --num inhibitory
+  :: Int -- ^ num excitory
+  -> Int -- ^ num inhibitory
   -> IO (Array DIM2 Float)
 initW numE numI =
   do
-    let numNeurons = numE + numI
-    !rs <- randomArray (uniformR (0,1)) (Z :. numNeurons :. numNeurons)
+    let
+      numNeurons = numE + numI
+      dim = Z :. numNeurons :. numNeurons
+    !rs <- randomArray (uniformR (0,1)) dim
     let
       f :: DIM2 -> Float
       f (Z :. y :. x)
@@ -86,14 +99,16 @@ wffInitMax = 0.1
 maxW = 50.0
 
 initWff
-  :: Int --num excitory
-  -> Int --num inhibitory
-  -> Int -- feedforward size
+  :: Int -- ^ num excitory
+  -> Int -- ^ num inhibitory
+  -> Int -- ^ feedforward size
   -> IO (Array DIM2 Float)
 initWff numE numI ffrfSize =
   do
-    let numNeurons = numE + numI
-    !rs <- randomArray (uniformR (0,1)) (Z :. numNeurons :. ffrfSize)
+    let
+      numNeurons = numE + numI
+      dim = Z :. numNeurons :. ffrfSize
+    !rs <- randomArray (uniformR (0,1)) dim
     let
       f :: DIM2 -> Float
       f (Z :. y :. _x)
@@ -112,24 +127,42 @@ posNoiseRate = 1.8
 numNoiseSteps :: Int
 numNoiseSteps = 73333
 
+-- | Initial positive poisson array
 initPosNoiseIn
-  :: Int --num excitory
-  -> Int --num inhibitory
+  :: Int -- ^ num excitory
+  -> Int -- ^ num inhibitory
   -> IO (Array DIM2 Float)
 initPosNoiseIn numE numI =
   do
-    let numNeurons = numE + numI
-    !rs <- randomArray (poisson posNoiseRate) (Z :. numNoiseSteps :. numNeurons) :: IO (Array DIM2 Float)
+    let
+      numNeurons = numE + numI
+      dim = Z :. numNoiseSteps :. numNeurons
+    !rs <- randomArray (poisson posNoiseRate) dim :: IO (Array DIM2 Float)
     let !arr = run1 (A.map ((* A.constant vStim))) rs
     return arr
 
 initNegNoiseIn
-  :: Int --num excitory
-  -> Int --num inhibitory
+  :: Int -- ^ num excitory
+  -> Int -- ^ num inhibitory
   -> IO (Array DIM2 Float)
 initNegNoiseIn numE numI =
   do
-    let numNeurons = numE + numI
-    !rs <- randomArray (poisson negNoiseRate) (Z :. numNoiseSteps :. numNeurons) :: IO (Array DIM2 Float)
+    let
+      numNeurons = numE + numI
+      dim = Z :. numNoiseSteps :. numNeurons
+    !rs <- randomArray (poisson negNoiseRate) dim :: IO (Array DIM2 Float)
     let !arr = run1 (A.map (A.negate . (* A.constant vStim))) rs
     return arr
+
+loadDataset
+  :: DIM2 -- ^ image size, (ydim,xdim)
+  -> FilePath -- ^ file location
+  -> IO (Array DIM3 Int8) -- ^ Array of size (numimages,ydim,xdim)
+loadDataset (Z :. y :. x) fp =
+  do
+    bytes <- BS.readFile fp
+    let
+      v = byteStringToVector bytes :: V.Vector Int8
+      len = V.length v `div` (y*x)
+      dim = Z :. len :. y :. x
+    return $ fromVectors dim v
