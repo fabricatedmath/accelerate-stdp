@@ -6,7 +6,7 @@ module Data.Array.Accelerate.Extra where
 
 import Data.Array.Accelerate
   ( Array
-  , DIM0, DIM1, DIM2, DIM3, DIM4
+  , DIM0, DIM1, DIM2, DIM3, DIM4, Scalar
   , (:.)(..), Z(..)
   , Exp, All(..), Shape, Elt, Acc, Slice
   , Int8
@@ -32,3 +32,6 @@ unindex4
     -> Exp (i, i, i, i)
 unindex4 ix = let Z :. l :. k :. j :. i = A.unlift ix  :: Z :. Exp i :. Exp i :. Exp i :. Exp i
               in  A.lift (l, k, j, i)
+
+singleton :: Elt a => a -> Scalar a
+singleton = A.fromList Z . return

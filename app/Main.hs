@@ -15,6 +15,7 @@ import Data.Array.Accelerate
   )
 import qualified Data.Array.Accelerate as A
 import Data.Array.Accelerate.Data.Bits as A
+import qualified Data.Array.Accelerate.Extra as A
 
 import Data.Array.Accelerate.LLVM.Native
 import Data.Array.Accelerate.Numeric.LinearAlgebra
@@ -134,8 +135,8 @@ main3 =
     print $ run1 h arr
     print "stuff"
 
-main :: IO ()
-main =
+main11:: IO ()
+main11 =
   do
     delays <- randomArray (uniformR (0,10)) (Z :. 10 :. 10 :: DIM2) :: IO (Array DIM2 Int)
     let
@@ -150,3 +151,22 @@ main =
     let incomingSpikes'' = run $ A.map g $ A.use incomingSpikes'
     print incomingSpikes''
     print $ run $ A.map (g . A.snd) $ A.use $ incomingSpikes''
+
+main :: IO ()
+main =
+  do
+    print "start"
+    !arr <- randomArray (uniformR (0,1)) (Z :. 10000 :. 10000 :: DIM2)
+    print "end"
+    print $ run1 (A.sum . A.flatten . A.asnd . A.awhile fI fA) (A.singleton 0, arr)
+--    !randoms <- randomForFFSpikes (Z :. 17 :. 17) 1000
+--
+
+fI :: Acc (Scalar Int, Array DIM2 Float) -> Acc (Scalar Bool)
+fI = A.map (A.< 100) . A.afst
+
+fA :: Acc (Scalar Int, Array DIM2 Float) -> Acc (Scalar Int, Array DIM2 Float)
+fA a =
+  let
+    (i,arr) = A.unlift a
+  in A.lift (A.map (+1) i,A.map (+1) arr)

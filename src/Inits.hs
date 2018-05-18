@@ -4,12 +4,12 @@
 module Inits
   (initDelay, initW, initWff
   , initPosNoiseIn, initNegNoiseIn
-  , loadDataset
+  , loadDataset, randomForFFSpikes
   , exponential, poisson) where
 
 import Data.Array.Accelerate
   ( Array
-  , DIM0, DIM1, DIM2, DIM3
+  , DIM0, DIM1, DIM2, DIM3, DIM4, DIM5
   , (:.)(..), Z(..)
   , Exp, All(..), Shape, Elt
   , Int8
@@ -166,3 +166,28 @@ loadDataset (Z :. y :. x) fp =
       len = V.length v `div` (y*x)
       dim = Z :. len :. y :. x
     return $ fromVectors dim v
+
+
+dt :: Float
+dt = 1.0
+
+presTime, presTimeLearning :: Float
+presTimeLearning = 350 -- ms
+presTime = presTimeLearning
+
+numStepsPerPres :: Float
+numStepsPerPres = presTime / dt
+
+timeZeroInput :: Float
+timeZeroInput = 100
+
+randomForFFSpikes
+  :: DIM2 -- ^ image size, (ydim,xdim)
+  -> Int -- ^ number of images for this chunk
+  -> IO (Array DIM5 Float)
+randomForFFSpikes (Z :. ydim :. xdim) numImages =
+  let
+    steps = P.round $ numStepsPerPres - timeZeroInput / dt
+    dim = (Z :. numImages :. steps :. 2 :. ydim :. xdim)
+  in
+    randomArray (uniformR (0,1)) dim
