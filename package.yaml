@@ -60,3 +60,5 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - V1Acc
+    - tasty
+    - tasty-hunit

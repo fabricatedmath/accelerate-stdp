@@ -4,7 +4,7 @@
 module Inits
   (initDelay, initW, initWff
   , initPosNoiseIn, initNegNoiseIn
-  , loadDataset, randomForFFSpikes
+  , randomForFFSpikes
   , exponential, poisson) where
 
 import Data.Array.Accelerate
@@ -153,20 +153,6 @@ initNegNoiseIn numE numI =
     !rs <- randomArray (poisson negNoiseRate) dim :: IO (Array DIM2 Float)
     let !arr = run1 (A.map (A.negate . (* A.constant vStim))) rs
     return arr
-
-loadDataset
-  :: DIM2 -- ^ image size, (ydim,xdim)
-  -> FilePath -- ^ file location
-  -> IO (Array DIM3 Int8) -- ^ Array of size (numimages,ydim,xdim)
-loadDataset (Z :. y :. x) fp =
-  do
-    bytes <- BS.readFile fp
-    let
-      v = byteStringToVector bytes :: V.Vector Int8
-      len = V.length v `div` (y*x)
-      dim = Z :. len :. y :. x
-    return $ fromVectors dim v
-
 
 dt :: Float
 dt = 1.0

@@ -10,7 +10,7 @@ import Data.Array.Accelerate
   ( Array
   , DIM0, DIM1, DIM2, DIM3
   , (:.)(..), Z(..)
-  , Exp, All(..), Shape, Elt
+  , Exp, All(..), Shape, Elt, Any(..)
   , Int8
   )
 import qualified Data.Array.Accelerate as A
@@ -36,6 +36,7 @@ import Data.Vector.Storable.ByteString
 
 import Prelude as P
 
+import Dataset
 import Inits
 
 numI, numE, numNeurons :: Int
@@ -112,15 +113,6 @@ main5 =
     print $ run1 (A.reshape (A.constant $ (Z :. 4 :. 5 :. 5 :: DIM3))) $ A.fromList (Z :. 100 :: DIM1) ([0..] :: [Float])
 
 
-loadDataset :: DIM2 -> IO (Array DIM3 Int8)
-loadDataset (Z :. y :. x) =
-  do
-    bytes <- BS.readFile "dog.dat"
-    let v = byteStringToVector bytes :: V.Vector Int8
-        len = V.length v `div` (y*x)
-        dim = Z :. len :. y :. x
-    return $ fromVectors dim v
-
 main4 :: IO ()
 main4 =
   do
@@ -155,18 +147,27 @@ main11 =
 main :: IO ()
 main =
   do
-    print "start"
-    !arr <- randomArray (uniformR (0,1)) (Z :. 10000 :. 10000 :: DIM2)
+    dataset <- loadDataset (Z :. 17 :. 17) "dog.dat"
+    let !augmented = run1 (fullDatasetAugmentation 150 1) dataset
+    print $ P.take 100 $ A.toList $ augmented
+    {-    print "start"
+    !arr <- randomArray (uniformR (0,1)) (Z :. 1000 :. 1000 :. 1000 :: DIM3)
     print "end"
-    print $ run1 (A.sum . A.flatten . A.asnd . A.awhile fI fA) (A.singleton 0, arr)
+    print $ run1 (A.sum . A.flatten) arr
+    print $ run1 (A.sum . A.flatten . A.asnd . A.awhile fI (fA (A.use arr))) (A.singleton 0, A.singleton 0)
+-}
 --    !randoms <- randomForFFSpikes (Z :. 17 :. 17) 1000
 --
 
-fI :: Acc (Scalar Int, Array DIM2 Float) -> Acc (Scalar Bool)
-fI = A.map (A.< 100) . A.afst
+fI :: Acc (Scalar Int, Scalar Float) -> Acc (Scalar Bool)
+fI = A.map (A.< 1000) . A.afst
 
-fA :: Acc (Scalar Int, Array DIM2 Float) -> Acc (Scalar Int, Array DIM2 Float)
-fA a =
+fA
+  :: Acc (Array DIM3 Float)
+  -> Acc (Scalar Int, Scalar Float)
+  -> Acc (Scalar Int, Scalar Float)
+fA arr a =
   let
-    (i,arr) = A.unlift a
-  in A.lift (A.map (+1) i,A.map (+1) arr)
+    (i,s) = A.unlift a
+    s' = A.sum . A.flatten $ A.slice arr (A.lift $ Any :. A.the i :. All :. All)
+  in A.lift (A.map (+1) i,A.zipWith (+) s s')
