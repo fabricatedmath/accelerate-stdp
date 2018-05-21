@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Inits
-  (initDelay, initW, initWff
+  (initDelays, initW, initWff
   , initPosNoiseIn, initNegNoiseIn
   , randomForFFSpikes
   , exponential, poisson) where
@@ -36,13 +36,19 @@ import Prelude as P
 -- | exponential generator for accelerate random array
 exponential
   :: (RandomSource m s, P.Floating a, Distribution StdUniform a)
-  => a -> p -> s -> m a
+  => a -- ^ beta
+  -> p
+  -> s
+  -> m a
 exponential beta = const $ runRVar $ R.exponential beta
 
 -- | poisson generator for accelerate random array
 poisson
   :: (RandomSource m s, P.Floating a, Distribution (R.Poisson b) a)
-  => b -> p -> s -> m a
+  => b -- ^ lambda
+  -> p
+  -> s
+  -> m a
 poisson lambda = const $ runRVar $ R.poisson lambda
 
 maxDelayDT :: Exp Int
@@ -52,8 +58,8 @@ delayBeta :: Float
 delayBeta = 5
 
 -- | Initial Delay Matrix
-initDelay :: DIM2 -> IO (Array DIM2 Int)
-initDelay dim =
+initDelays :: DIM2 -> IO (Array DIM2 Int)
+initDelays dim =
   do
     !rs <- randomArray (exponential delayBeta) dim :: IO (Array DIM2 Float)
     let
