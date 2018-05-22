@@ -5,6 +5,8 @@
 
 module Main where
 
+import Control.Monad (when)
+
 import Data.Array.Accelerate
   ( Array
   , DIM0, DIM1, DIM2, DIM3
@@ -34,6 +36,8 @@ import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.ByteString
 
 import Prelude as P
+
+import System.Exit (exitSuccess)
 
 import Acc
 import Dataset
@@ -150,8 +154,8 @@ main =
     let
       inputMult = 150 :: Float
       dt = 1 :: Float
-      numE = 100 :: Int
-      numI = 20 :: Int
+      numE = 4 :: Int
+      numI = 2 :: Int
       numNeurons = numE + numI :: Int
       numNoiseSteps = 73333 :: Int
       patchSize = 17 :: Int
@@ -161,6 +165,9 @@ main =
     dataset <- loadDataset (Z :. 17 :. 17) "dog.dat"
     let !augmented = run1 (fullDatasetAugmentation inputMult dt) dataset
     !w <- initW numE numI
+    print w
+    print $ run1 A.sum w
+    when True $ exitSuccess
     !wff <- initWff numE numI ffrfSize
     let
       !existingSpikes =
@@ -208,7 +215,7 @@ func vstim latConnMult numNoiseSteps acc =
     iFF = A.map (*A.constant vstim) $ wff #> firings
     (spikes, existingSpikes') = A.unzip $ A.map ratchetSpikes existingSpikes -- spikes == spikesthisstep
     latInput = A.zipWith (\weight b -> b A.? (weight,0)) w spikes
-    iLat = A.sum $ A.map (* A.constant (latConnMult * vstim)) latInput -- how does indexing work in eigen? Might be wrong
+    iLat = A.sum $ A.map (* A.constant (latConnMult * vstim)) latInput
     noiseStepIndex = A.mod numStep numNoiseStepsE
     posNoise = A.slice posNoiseIn (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
     negNoise = A.slice negNoiseIn (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
