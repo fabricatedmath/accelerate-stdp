@@ -29,6 +29,7 @@ dependencies:
 - lens-accelerate
 - mwc-random-accelerate
 - accelerate-blas
+- lens
 - spool
 - vector
 - bytestring

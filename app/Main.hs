@@ -162,12 +162,12 @@ main =
       ffrfSize = 2 * patchSize * patchSize :: Int
       vstim = 1 :: Float
       latConnMult = 5 :: Float
-    dataset <- loadDataset (Z :. 17 :. 17) "dog.dat"
-    let !augmented = run1 (fullDatasetAugmentation inputMult dt) dataset
+    !dataset <-
+      run1 (fullDatasetAugmentation inputMult dt)
+      <$> loadDataset (Z :. 17 :. 17) "dog.dat"
     !w <- initW numE numI
     print w
     print $ run1 A.sum w
-    when True $ exitSuccess
     !wff <- initWff numE numI ffrfSize
     let
       !existingSpikes =
@@ -177,51 +177,54 @@ main =
     posNoiseIn <- initPosNoiseIn numE numI
     negNoiseIn <- initNegNoiseIn numE numI
     delays <- initDelays (Z :. numNeurons :. numNeurons)
-    print $ run1 (func vstim latConnMult numNoiseSteps) (augmented,w,wff,existingSpikes,delays,posNoiseIn,negNoiseIn,rs,A.singleton 0)
+    print $ run1 (func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn) (w,wff,existingSpikes,rs,A.singleton 0)
+    print $ "dogs"
 
 func
   :: Float -- ^ vstim
   -> Float -- ^ latConnMult
   -> Int -- ^ numNoiseSteps
+  -> Matrix Float -- ^ dataset
+  -> Matrix Int -- ^ delays
+  -> Matrix Float -- ^ posNoiseIn
+  -> Matrix Float -- ^ negNoiseIn
   -> Acc
-     ( Array DIM2 Float -- dataset
-     , Array DIM2 Float -- w
+     ( Array DIM2 Float -- w
      , Array DIM2 Float -- wff
      , Array DIM2 Int -- existingSpikes
-     , Array DIM2 Int -- delays
-     , Array DIM2 Float -- posNoiseIn
-     , Array DIM2 Float -- negNoiseIn
      , Vector Float -- rs
      , Scalar Int -- numStepA
      )
-  -> Acc (Vector Float)
-func vstim latConnMult numNoiseSteps acc =
+  -> Acc (Vector Float, Vector Float)
+func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
   let
-    ( dataset :: Acc (Array DIM2 Float),
-      w :: Acc (Array DIM2 Float),
+    ( w :: Acc (Array DIM2 Float),
       wff :: Acc (Array DIM2 Float),
       existingSpikes :: Acc (Array DIM2 Int),
-      delays :: Acc (Array DIM2 Int),
-      posNoiseIn :: Acc (Array DIM2 Float),
-      negNoiseIn :: Acc (Array DIM2 Float),
       rs :: Acc (Vector Float),
       numStepA :: Acc (Scalar Int)
       ) = A.unlift acc
     numStep = A.the numStepA
     numNoiseStepsE = A.constant numNoiseSteps
 
-    image = A.slice dataset (A.constant $ Z :. (0::Int) :. All)
-    firings = A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
-    iFF = A.map (*A.constant vstim) $ wff #> firings
+    image = A.slice (A.use dataset) (A.constant $ Z :. (0::Int) :. All)
+    lgnfirings = A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
     (spikes, existingSpikes') = A.unzip $ A.map ratchetSpikes existingSpikes -- spikes == spikesthisstep
+
+    i = computeInputs vstim latConnMult numNoiseSteps
+        posNoiseIn negNoiseIn numStepA w wff lgnfirings spikes
+
+    iFF = A.map (*A.constant vstim) $ wff #> lgnfirings
+
     latInput = A.zipWith (\weight b -> b A.? (weight,0)) w spikes
     iLat = A.sum $ A.map (* A.constant (latConnMult * vstim)) latInput
     noiseStepIndex = A.mod numStep numNoiseStepsE
-    posNoise = A.slice posNoiseIn (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
-    negNoise = A.slice negNoiseIn (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
-    i = A.zipWith4 (\ff lat p n -> ff + lat + p + n) iFF iLat posNoise negNoise
+    posNoise = A.slice (A.use posNoiseIn) (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
+    negNoise = A.slice (A.use negNoiseIn) (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
+    i' = A.zipWith4 (\ff lat p n -> ff + lat + p + n) iFF iLat posNoise negNoise
+
   in
-    i
+    A.lift (i,i')
 
     {-    print "start"
     !arr <- randomArray (uniformR (0,1)) (Z :. 1000 :. 1000 :. 1000 :: DIM3)

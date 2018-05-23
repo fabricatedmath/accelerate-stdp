@@ -5,7 +5,7 @@
 module Data.Array.Accelerate.Extra where
 
 import Data.Array.Accelerate
-  ( Array
+  ( Array, Arrays
   , DIM0, DIM1, DIM2, DIM3, DIM4, Scalar
   , (:.)(..), Z(..)
   , Exp, All(..), Shape, Elt, Acc, Slice
@@ -13,6 +13,34 @@ import Data.Array.Accelerate
   )
 
 import qualified Data.Array.Accelerate as A
+
+aiterate
+  :: forall a. Arrays a
+  => Exp Int
+  -> (Acc a -> Acc a)
+  -> Acc a
+  -> Acc a
+aiterate n' f' arr =
+  let
+    stoppingCond = A.map (A.> 0) . A.asnd
+    f acc = A.lift (f' a, A.map (subtract 1) n)
+      where (a,n) = A.unlift acc
+  in
+    A.afst $ A.awhile stoppingCond f $ A.lift (arr,A.unit n')
+
+aiterate'
+  :: forall a. Arrays a
+  => Exp Int
+  -> (Exp Int -> Acc a -> Acc a)
+  -> Acc a
+  -> Acc a
+aiterate' n' f' arr =
+  let
+    stoppingCond = A.map (A.> 0) . A.asnd
+    f acc = A.lift (f' (A.the n) a, A.map (subtract 1) n)
+      where (a,n) = A.unlift acc
+  in
+    A.afst $ A.awhile stoppingCond f $ A.lift (arr,A.unit n')
 
 -- | Create a rank-4 index from four Exp Int`s
 --

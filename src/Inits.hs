@@ -2,13 +2,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Inits
-  (initDelays, initW, initWff
+  (initDelays, initW, initWff, initALTDS
   , initPosNoiseIn, initNegNoiseIn
   , randomForFFSpikes
   , exponential, poisson) where
 
 import Data.Array.Accelerate
-  ( Array
+  ( Array, Matrix, Vector
   , DIM0, DIM1, DIM2, DIM3, DIM4, DIM5
   , (:.)(..), Z(..)
   , Exp, All(..), Shape, Elt
@@ -172,6 +172,20 @@ numStepsPerPres = presTime / dt
 
 timeZeroInput :: Float
 timeZeroInput = 100
+
+initALTDS
+  :: Int -- ^ num excitory
+  -> Int -- ^ num inhibitory
+  -> Float -- ^ baseALTD
+  -> Float -- ^ randALTD
+  -> IO (Vector Float)
+initALTDS numE numI baseALTD randALTD =
+  do
+    let numNeurons = numE + numI
+    !rs <- randomArray (uniformR (0,1)) (Z :. numNeurons :: DIM1)
+    let !arr =
+          run1 (A.map (\r -> A.constant baseALTD + A.constant randALTD * r)) rs
+    return arr
 
 randomForFFSpikes
   :: DIM2 -- ^ image size, (ydim,xdim)
