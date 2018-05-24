@@ -36,11 +36,11 @@ aiterate'
   -> Acc a
 aiterate' n' f' arr =
   let
-    stoppingCond = A.map (A.> 0) . A.asnd
-    f acc = A.lift (f' (A.the n) a, A.map (subtract 1) n)
+    stoppingCond = A.map (A.< n') . A.asnd
+    f acc = A.lift (f' (A.the n) a, A.map (+1) n)
       where (a,n) = A.unlift acc
   in
-    A.afst $ A.awhile stoppingCond f $ A.lift (arr,A.unit n')
+    A.afst $ A.awhile stoppingCond f $ A.lift (arr,A.unit 0)
 
 -- | Create a rank-4 index from four Exp Int`s
 --

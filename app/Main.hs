@@ -15,6 +15,7 @@ import Data.Array.Accelerate
   , Int8
   )
 import qualified Data.Array.Accelerate as A
+import Data.Array.Accelerate.Control.Lens.Shape
 import Data.Array.Accelerate.Data.Bits as A
 import qualified Data.Array.Accelerate.Extra as A
 
@@ -195,7 +196,7 @@ func
      , Vector Float -- rs
      , Scalar Int -- numStepA
      )
-  -> Acc (Vector Float, Vector Float)
+  -> Acc (Vector Float)
 func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
   let
     ( w :: Acc (Array DIM2 Float),
@@ -204,46 +205,39 @@ func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
       rs :: Acc (Vector Float),
       numStepA :: Acc (Scalar Int)
       ) = A.unlift acc
-    numStep = A.the numStepA
-    numNoiseStepsE = A.constant numNoiseSteps
-
     image = A.slice (A.use dataset) (A.constant $ Z :. (0::Int) :. All)
     lgnfirings = A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
     (spikes, existingSpikes') = A.unzip $ A.map ratchetSpikes existingSpikes -- spikes == spikesthisstep
 
     i = computeInputs vstim latConnMult numNoiseSteps
         posNoiseIn negNoiseIn numStepA w wff lgnfirings spikes
-
-    iFF = A.map (*A.constant vstim) $ wff #> lgnfirings
-
-    latInput = A.zipWith (\weight b -> b A.? (weight,0)) w spikes
-    iLat = A.sum $ A.map (* A.constant (latConnMult * vstim)) latInput
-    noiseStepIndex = A.mod numStep numNoiseStepsE
-    posNoise = A.slice (A.use posNoiseIn) (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
-    negNoise = A.slice (A.use negNoiseIn) (A.lift $ Z :. noiseStepIndex :. All) :: Acc (Vector Float)
-    i' = A.zipWith4 (\ff lat p n -> ff + lat + p + n) iFF iLat posNoise negNoise
-
   in
-    A.lift (i,i')
+    i
 
-    {-    print "start"
-    !arr <- randomArray (uniformR (0,1)) (Z :. 1000 :. 1000 :. 1000 :: DIM3)
-    print "end"
-    print $ run1 (A.sum . A.flatten) arr
-    print $ run1 (A.sum . A.flatten . A.asnd . A.awhile fI (fA (A.use arr))) (A.singleton 0, A.singleton 0)
--}
---    !randoms <- randomForFFSpikes (Z :. 17 :. 17) 1000
---
-
-fI :: Acc (Scalar Int, Scalar Float) -> Acc (Scalar Bool)
-fI = A.map (A.< 1000) . A.afst
-
-fA
-  :: Acc (Array DIM3 Float)
-  -> Acc (Scalar Int, Scalar Float)
-  -> Acc (Scalar Int, Scalar Float)
-fA arr a =
+presentImage
+  :: Int -- ^ timezeroinput
+  -> Acc (Vector Float) -- ^ Image
+  -> Acc (Matrix Float) -- ^ randoms
+  -> Acc (Vector Float)
+presentImage timezeroinput image randoms =
   let
-    (i,s) = A.unlift a
-    s' = A.sum . A.flatten $ A.slice arr (A.lift $ Any :. A.the i :. All :. All)
-  in A.lift (A.map (+1) i,A.zipWith (+) s s')
+    (yrdim,xrdim) = A.unlift $ A.unindex2 $ A.shape randoms
+      :: (Exp Int, Exp Int)
+    numIterations = A.constant timezeroinput + yrdim
+    lgnfiringsMat = A.concatOn _2 lgnfiringsMat' blank
+      where
+        lgnfiringsMat' =
+          A.zipWith (\r i -> A.fromIntegral $ A.boolToInt $ r A.< i) randoms $
+          A.replicate (A.lift $ Z :. yrdim :. All) image
+        blank =
+          A.fill (A.lift $ Z:.A.constant timezeroinput:.xrdim :: Exp DIM2)
+          (A.constant 0)
+    f :: Exp Int -> Acc (Vector Float) -> Acc (Vector Float)
+    f i a =
+      let
+        lgnfirings = A.slice lgnfiringsMat (A.lift $ Any :. i :. All)
+          :: Acc (Vector Float)
+      in
+        (A.++) a lgnfirings
+  in
+    A.aiterate' numIterations f image

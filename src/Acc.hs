@@ -55,8 +55,7 @@ computeInputs vstim latConnMult numNoiseSteps
   where
     iFF = A.map (* A.constant vstim) $ wff #> lgnfirings
     iLat = A.sum $ A.map (* A.constant (latConnMult * vstim)) latInput
-      where
-        latInput = A.zipWith (\weight b -> b A.? (weight,0)) w spikes
+      where latInput = A.zipWith (\weight b -> b A.? (weight,0)) w spikes
     (posNoise, negNoise) = (posNoise', negNoise')
       where
         noiseStepIndex = A.mod (A.the numStep) (A.constant numNoiseSteps)
