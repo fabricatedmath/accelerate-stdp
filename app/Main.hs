@@ -44,111 +44,6 @@ import Acc
 import Dataset
 import Inits
 
-numI, numE, numNeurons :: Int
-numI = 20
-numE = 100
-numNeurons = numE + numI
-
-f :: Exp Int -> Exp Int -> Exp Int -> Exp Int
-f delay spike incomingSpike = incomingSpike * bit delay .|. spike
-
-g :: Exp Int -> Exp (Bool, Int)
-g i = A.lift (testBit i 0, shiftR i 1)
-
-h :: Acc (Array DIM3 Float) -> Acc (Array DIM0 Float)
-h arr =
-  let
-    s = A.slice arr (A.constant (Z :. (0::Int) :. All :. All))
-  in
-    A.sum $ A.flatten $ s <> A.transpose s
-
-main9 :: IO ()
-main9 =
-  do
-    arr <- randomArray (uniformR (0,1)) (Z :. 10)
-    --let arr = A.fromList (Z :. 10) ([0..] :: [Float])
-    let
-      f :: DIM1 -> Float
-      f (Z :. x) = P.fromIntegral x
-      m = A.fromFunction (Z :. 10) f
-      !w = run $ A.zipWith (*) (A.use arr) (A.use m)
-    print w
-
-main8 :: IO ()
-main8 =
-  do
-    initW numE numI >>= print
-    let
-      m = A.fromFunction (Z :. 10 :. 10) (\(Z :. y :. x) -> P.fromIntegral $ y * x) :: Array DIM2 Float
-    print $ run $ A.zipWith (*) (A.use m) (A.use m)
-
-main10 :: IO ()
-main10 =
-  do
-    !arr <- randomArray (exponential (5)) (Z :. 120 :. 120 :: DIM2) :: IO (Array DIM2 Float)
-    let !arr2 = run1 (A.map (\v -> v A.> 20 A.? (1,A.max 1 $ A.round v))) arr :: Array DIM2 Int
-    print arr2
-    !arr3 <- initDelays (Z :. 120 :. 120 :: DIM2)
---    print arr3
-    print $ run1 (A.sum . A.flatten) arr2
-    print $ run1 (A.sum . A.flatten) arr3
-    --generateInitW >>= print
-    --arr <- loadDataset (Z :. 17 :. 17)
-    --print arr
-    --arr <- randomArray (uniform) (Z :. 10000 :: DIM1) :: IO (Array DIM1 Float)
-    --print arr
-
-main6 :: IO ()
-main6 =
-  do
-    --arr <- randomArray (uniformR (0,10)) (Z :. 10 :: DIM1) :: IO (Array DIM1 Float)
-    arr <- randomArray (exponential (5)) (Z :. 10000 :: DIM1) :: IO (Array DIM1 Float)
-    print arr
-    print $ run1 (A.map (/10000) . A.sum) arr
-    print $ (sort $ A.toList arr) P.!! 5000
-
-    arr2 <- randomArray (poisson (5 :: Float)) (Z :. 10000 :: DIM1) :: IO (Array DIM1 Float)
-    print arr2
-    print $ run1 (A.map (/10000) . A.sum) arr2
-    print $ (sort $ A.toList arr2) P.!! 5000
-
-main5 :: IO ()
-main5 =
-  do
-    print $ run1 (A.reshape (A.constant $ (Z :. 4 :. 5 :. 5 :: DIM3))) $ A.fromList (Z :. 100 :: DIM1) ([0..] :: [Float])
-
-
-main4 :: IO ()
-main4 =
-  do
-    bytes <- BS.readFile "dog.dat"
-    print $ P.take 20 $ V.toList (byteStringToVector bytes :: V.Vector Int8)
-
-main3 :: IO ()
-main3 =
-  do
-    arr <- randomArray (uniformR (0,10)) (Z :. 250 :. 578 :. 1000 :: DIM3) :: IO (Array DIM3 Float)
-    print $ run1 (A.sum . A.flatten) arr
-    print $ run1 h arr
-    print "stuff"
-
-main11:: IO ()
-main11 =
-  do
-    delays <- randomArray (uniformR (0,10)) (Z :. 10 :. 10 :: DIM2) :: IO (Array DIM2 Int)
-    let
-      spikes = run $ A.fill (A.constant (Z :. 10 :. 10 :: DIM2)) 0 :: Array DIM2 Int
-      incomingSpikes = run $ A.fill (A.constant (Z :. 10 :. 10 :: DIM2)) 1 :: Array DIM2 Int
-    print delays
-    print spikes
-    print incomingSpikes
-    let
-      incomingSpikes' = run $ A.zipWith3 f (A.use delays) (A.use spikes) (A.use incomingSpikes)
-    print incomingSpikes'
-    let incomingSpikes'' = run $ A.map g $ A.use incomingSpikes'
-    print incomingSpikes''
-    print $ run $ A.map (g . A.snd) $ A.use $ incomingSpikes''
-
 main :: IO ()
 main =
   do
@@ -214,12 +109,34 @@ func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
   in
     i
 
+data State =
+  State
+  { _stateW :: Acc (Matrix Float)
+  , _stateWff :: Acc (Matrix Float)
+  , _stateV :: Acc (Vector Float)
+  , _stateVThresh :: Acc (Vector Float)
+  , _stateVNeg :: Acc (Vector Float)
+  , _stateVPos :: Acc (Vector Float)
+  , _stateVLongTrace :: Acc (Vector Float)
+  , _stateXPlastLat :: Acc (Vector Float)
+  , _stateXPlastFF :: Acc (Vector Float)
+  , _stateIsSpiking :: Acc (Vector Float)
+  , _stateWadap :: Acc (Vector Float)
+  , _stateZ :: Acc (Vector Float)
+  }
+
 presentImage
   :: Int -- ^ timezeroinput
+  -> Acc (Exp Int) -- ^ numpres
   -> Acc (Vector Float) -- ^ Image
   -> Acc (Matrix Float) -- ^ randoms
+  {--> Acc (Vector Float) -- ^ v
+  -> Acc (Vector Float) -- ^ vthresh
+  -> Acc (Vector Float) -- ^ z
+  -> Acc (Vector Float) -- ^ wadap
+-}
   -> Acc (Vector Float)
-presentImage timezeroinput image randoms =
+presentImage timezeroinput numpres image randoms =
   let
     (yrdim,xrdim) = A.unlift $ A.unindex2 $ A.shape randoms
       :: (Exp Int, Exp Int)
@@ -233,11 +150,12 @@ presentImage timezeroinput image randoms =
           A.fill (A.lift $ Z:.A.constant timezeroinput:.xrdim :: Exp DIM2)
           (A.constant 0)
     f :: Exp Int -> Acc (Vector Float) -> Acc (Vector Float)
-    f i a =
+    f numstepthispres state =
       let
-        lgnfirings = A.slice lgnfiringsMat (A.lift $ Any :. i :. All)
+        lgnfirings =
+          A.slice lgnfiringsMat (A.lift $ Any :. numstepthispres :. All)
           :: Acc (Vector Float)
       in
-        (A.++) a lgnfirings
+        (A.++) state lgnfirings
   in
     A.aiterate' numIterations f image
