@@ -75,6 +75,7 @@ data Constants =
   , _restPotIzh :: Float -- ^ Approx resting potential Izhikevich neurons
 
   , _inputMult :: Float
+  , _noSpike :: Bool
   }
 
 makeFieldsNoPrefix ''Constants
@@ -176,4 +177,6 @@ defaultConstants =
   , _restPotIzh = -70.5
 
   , _inputMult = 150
+
+  , _noSpike = False
   }
