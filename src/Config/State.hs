@@ -27,8 +27,8 @@ data AccState =
 
 makeFieldsNoPrefix ''AccState
 
-data MatrixState =
-  MatrixState
+data State =
+  State
   { _stateW :: Matrix Float
   , _stateWff :: Matrix Float
   , _stateV :: Vector Float
@@ -43,24 +43,40 @@ data MatrixState =
   , _stateZ :: Vector Float
   }
 
-makeFieldsNoPrefix ''MatrixState
+makeFieldsNoPrefix ''State
 
-type State =
-  ( Matrix Float -- ^ w
-  , Matrix Float -- ^ wff
-  , Vector Float -- ^ v
-  , Vector Float -- ^ vthresh
-  , Vector Float -- ^ vneg
-  , Vector Float -- ^ vpos
-  , Vector Float -- ^ vlongtrace
-  , Vector Float -- ^ xPlastLat
-  , Vector Float -- ^ xPlastFF
-  , Vector Float -- ^ isspiking
-  , Vector Float -- ^ wadap
-  , Vector Float -- ^ z
+matrixStateToStateTup :: State -> StateTup
+matrixStateToStateTup matState =
+  ( matState ^. stateW
+  , matState ^. stateWff
+  , matState ^. stateV
+  , matState ^. stateVThresh
+  , matState ^. stateVNeg
+  , matState ^. stateVPos
+  , matState ^. stateVLongTrace
+  , matState ^. stateXPlastLat
+  , matState ^. stateXPlastFF
+  , matState ^. stateIsSpiking
+  , matState ^. stateWadap
+  , matState ^. stateZ
   )
 
-toAccState :: Acc State -> AccState
+type StateTup =
+  ( Matrix Float -- w
+  , Matrix Float -- wff
+  , Vector Float -- v
+  , Vector Float -- vthresh
+  , Vector Float -- vneg
+  , Vector Float -- vpos
+  , Vector Float -- vlongtrace
+  , Vector Float -- xPlastLat
+  , Vector Float -- xPlastFF
+  , Vector Float -- isspiking
+  , Vector Float -- wadap
+  , Vector Float -- z
+  )
+
+toAccState :: Acc StateTup -> AccState
 toAccState acc =
   let
     (w,wff,v,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z)

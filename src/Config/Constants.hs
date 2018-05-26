@@ -6,12 +6,16 @@ module Config.Constants where
 
 import Control.Lens
 
+import Data.Array.Accelerate (Z(..),(:.)(..),DIM2)
+
+import Prelude as P
+
 data Constants =
   Constants
   { _dt :: Float
 
-  , _baseAltd :: Float
-  , _randAltd :: Float
+  , _baseALTD :: Float
+  , _randALTD :: Float
   , _altp :: Float
   , _minv :: Float
   , _tauvlongtrace :: Float
@@ -52,7 +56,7 @@ data Constants =
 
   , _thetaVLongTrace :: Float
 
-  , _maxDelayDT :: Float
+  , _maxDelayDT :: Int
   , _numSpikingSteps :: Int
 
   , _thetaVPos :: Float
@@ -63,12 +67,14 @@ data Constants =
 
   , _numNoiseSteps :: Int
 
-  , _delayParam :: Float
+  , _delayBeta :: Float
 
   , _wpenScale :: Float
   , _altpMult :: Float
   , _presTime :: Float -- ^ in ms
   , _restPotIzh :: Float -- ^ Approx resting potential Izhikevich neurons
+
+  , _inputMult :: Float
   }
 
 makeFieldsNoPrefix ''Constants
@@ -96,16 +102,22 @@ vReset = eLeak
 thetaVNeg :: (HasELeak c Float) => Getter c Float
 thetaVNeg = eLeak
 
-numStepsPerPres :: (HasPresTime c Float, HasDt c Float) => Getter c Float
-numStepsPerPres = to (\c -> c ^. presTime / c ^. dt)
+numStepsPerPres :: (HasPresTime c Float, HasDt c Float) => Getter c Int
+numStepsPerPres = to (\c -> P.round $ c ^. presTime / c ^. dt)
+
+imageSize :: (HasPatchSize c Int) => Getter c DIM2
+imageSize = to (\c -> Z :. c ^. patchSize :. c ^. patchSize)
+
+numStepsZeroInput :: (HasDt c Float, HasTimeZeroInput c Float) => Getter c Int
+numStepsZeroInput = to (\c -> P.round $ c ^. timeZeroInput / c ^. dt)
 
 defaultConstants :: Constants
 defaultConstants =
   Constants
   { _dt = 1
 
-  , _baseAltd = (14e-5 * 1.5 * 1.0)
-  , _randAltd = 0.0
+  , _baseALTD = (14e-5 * 1.5 * 1.0)
+  , _randALTD = 0.0
 
   , _altp = (8e-5 * 0.008 * 1.0)
   , _minv = -80
@@ -156,10 +168,12 @@ defaultConstants =
 
   , _numNoiseSteps = 73333
 
-  , _delayParam = 5.0
+  , _delayBeta = 5.0
 
   , _wpenScale = 0.33
   , _altpMult = 0.75
   , _presTime = 350
   , _restPotIzh = -70.5
+
+  , _inputMult = 150
   }

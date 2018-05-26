@@ -5,6 +5,7 @@
 
 module Main where
 
+import Control.Lens
 import Control.Monad (when)
 
 import Data.Array.Accelerate
@@ -41,45 +42,42 @@ import Prelude as P
 import System.Exit (exitSuccess)
 
 import Acc
+import qualified Config.Constants as C
 import Dataset
 import Inits
 
 main :: IO ()
 main =
   do
-    let
-      inputMult = 150 :: Float
-      dt = 1 :: Float
-      numE = 4 :: Int
-      numI = 2 :: Int
-      numNeurons = numE + numI :: Int
-      numNoiseSteps = 73333 :: Int
-      patchSize = 17 :: Int
-      ffrfSize = 2 * patchSize * patchSize :: Int
-      vstim = 1 :: Float
-      latConnMult = 5 :: Float
+    let constants = C.defaultConstants
+        ffrfSize = constants ^. C.ffrfSize
+        numNeurons = constants ^. C.numNeurons
     !dataset <-
-      run1 (fullDatasetAugmentation inputMult dt)
-      <$> loadDataset (Z :. 17 :. 17) "dog.dat"
-    !w <- initW numE numI
+      run1 (fullDatasetAugmentation' constants)
+      <$> loadDataset' constants "dog.dat"
+    !w <- initW' constants
     print w
     print $ run1 A.sum w
-    !wff <- initWff numE numI ffrfSize
+    !wff <- initWff' constants
     let
       !existingSpikes =
         run $ A.fill (A.constant $ Z :. numNeurons :. numNeurons) (A.constant 0)
         :: Array DIM2 Int
     !rs <- randomArray (uniformR (0,1)) (Z :. ffrfSize) :: IO (Vector Float)
-    posNoiseIn <- initPosNoiseIn numE numI
-    negNoiseIn <- initNegNoiseIn numE numI
-    delays <- initDelays (Z :. numNeurons :. numNeurons)
-    print $ run1 (func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn) (w,wff,existingSpikes,rs,A.singleton 0)
+    posNoiseIn <- initPosNoiseIn' constants
+    negNoiseIn <- initNegNoiseIn' constants
+    delays <- initDelays' constants
+    print $
+      run1 (func constants dataset delays posNoiseIn negNoiseIn)
+      (w,wff,existingSpikes,rs,A.singleton 0)
     print $ "dogs"
 
 func
-  :: Float -- ^ vstim
-  -> Float -- ^ latConnMult
-  -> Int -- ^ numNoiseSteps
+  :: ( C.HasNumNoiseSteps c Int
+     , C.HasLatConnMult c Float
+     , C.HasVstim c Float
+     )
+  => c
   -> Matrix Float -- ^ dataset
   -> Matrix Int -- ^ delays
   -> Matrix Float -- ^ posNoiseIn
@@ -92,8 +90,11 @@ func
      , Scalar Int -- numStepA
      )
   -> Acc (Vector Float)
-func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
+func c dataset delays posNoiseIn negNoiseIn acc =
   let
+    vstim = c ^. C.vstim
+    latConnMult = c ^. C.latConnMult
+    numNoiseSteps = c ^. C.numNoiseSteps
     ( w :: Acc (Array DIM2 Float),
       wff :: Acc (Array DIM2 Float),
       existingSpikes :: Acc (Array DIM2 Int),
@@ -101,13 +102,14 @@ func vstim latConnMult numNoiseSteps dataset delays posNoiseIn negNoiseIn acc =
       numStepA :: Acc (Scalar Int)
       ) = A.unlift acc
     image = A.slice (A.use dataset) (A.constant $ Z :. (0::Int) :. All)
-    lgnfirings = A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
+    lgnfirings =
+      A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
     (spikes, existingSpikes') = A.unzip $ A.map ratchetSpikes existingSpikes -- spikes == spikesthisstep
 
-    i = computeInputs vstim latConnMult numNoiseSteps
-        posNoiseIn negNoiseIn numStepA w wff lgnfirings spikes
+    inputs = computeInputs vstim latConnMult numNoiseSteps
+             posNoiseIn negNoiseIn numStepA w wff lgnfirings spikes
   in
-    i
+    inputs
 
 data State =
   State

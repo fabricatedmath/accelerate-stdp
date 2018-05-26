@@ -1,10 +1,14 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Dataset where
+
+import Control.Lens
 
 import Data.Array.Accelerate
   ( Array
-  , DIM0, DIM1, DIM2, DIM3, DIM4
+  , DIM2, DIM3, DIM4
   , (:.)(..), Z(..)
-  , Exp, All(..), Shape, Elt, Acc, Slice
+  , Exp, Acc
   , Int8
   )
 
@@ -18,6 +22,15 @@ import qualified Data.ByteString as BS
 
 import qualified Data.Vector.Storable as V
 import Data.Vector.Storable.ByteString
+
+import qualified Config.Constants as C
+
+loadDataset'
+  :: C.HasPatchSize s Int
+  => s
+  -> FilePath -- ^ file location
+  -> IO (Array DIM3 Int8)
+loadDataset' c = loadDataset (c ^. C.imageSize)
 
 loadDataset
   :: DIM2 -- ^ image size, (ydim,xdim)
@@ -82,6 +95,16 @@ scaleDataset inputMult dt =
     multiplier = inputMult * 2 * dt / 1000
   in
     A.map (* A.constant multiplier)
+
+fullDatasetAugmentation'
+  :: ( C.HasDt s Float
+     , C.HasInputMult s Float
+     )
+  => s
+  -> Acc (Array DIM3 Int8)
+  -> Acc (Array DIM2 Float)
+fullDatasetAugmentation' c =
+  fullDatasetAugmentation (c ^. C.inputMult) (c ^. C.dt)
 
 -- | transform, normalize and scale dataset
 fullDatasetAugmentation

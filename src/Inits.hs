@@ -2,65 +2,55 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Inits
-  (initDelays, initW, initWff, initALTDS
-  , initPosNoiseIn, initNegNoiseIn
-  , randomForFFSpikes
-  , exponential, poisson) where
+  ( initDelays, initDelays'
+  , initW, initW'
+  , initWff, initWff'
+  , initALTDS, initALTDS'
+  , initPosNoiseIn, initPosNoiseIn'
+  , initNegNoiseIn, initNegNoiseIn'
+  , randomForFFSpikes, randomForFFSpikes'
+  ) where
+
+import Control.Lens
 
 import Data.Array.Accelerate
-  ( Array, Matrix, Vector
-  , DIM0, DIM1, DIM2, DIM3, DIM4, DIM5
+  ( Array, Vector
+  , DIM1, DIM2, DIM5
   , (:.)(..), Z(..)
-  , Exp, All(..), Shape, Elt
-  , Int8
+  , Exp
   )
 
 import qualified Data.Array.Accelerate as A
 
-import Data.Array.Accelerate.IO.Data.Vector.Storable (fromVectors)
-
 import Data.Array.Accelerate.LLVM.PTX
 import Data.Array.Accelerate.System.Random.MWC
-
-import qualified Data.ByteString as BS
-
-import Data.Random hiding (uniform)
-import qualified Data.Random.Distribution.Exponential as R
-import qualified Data.Random.Distribution.Poisson as R
-
-import qualified Data.Vector.Storable as V
-import Data.Vector.Storable.ByteString
+import Data.Array.Accelerate.System.Random.Extra
 
 import Prelude as P
 
--- | exponential generator for accelerate random array
-exponential
-  :: (RandomSource m s, P.Floating a, Distribution StdUniform a)
-  => a -- ^ beta
-  -> p
-  -> s
-  -> m a
-exponential beta = const $ runRVar $ R.exponential beta
+import qualified Config.Constants as C
 
--- | poisson generator for accelerate random array
-poisson
-  :: (RandomSource m s, P.Floating a, Distribution (R.Poisson b) a)
-  => b -- ^ lambda
-  -> p
-  -> s
-  -> m a
-poisson lambda = const $ runRVar $ R.poisson lambda
-
-maxDelayDT :: Exp Int
-maxDelayDT = 20
-
-delayBeta :: Float
-delayBeta = 5
+initDelays'
+  :: ( C.HasMaxDelayDT s Int
+     , C.HasDelayBeta s Float
+     , C.HasNumE s Int
+     , C.HasNumI s Int
+     )
+  => s
+  -> IO (Array DIM2 Int)
+initDelays' c =
+  initDelays (c ^. C.numNeurons) (c ^. C.delayBeta)
+  (A.constant $ c ^. C.maxDelayDT)
 
 -- | Initial Delay Matrix
-initDelays :: DIM2 -> IO (Array DIM2 Int)
-initDelays dim =
+initDelays
+  :: Int -- ^ numNeurons
+  -> Float -- ^ delayBeta
+  -> Exp Int -- ^ maxDelayDT
+  -> IO (Array DIM2 Int)
+initDelays numNeurons delayBeta maxDelayDT =
   do
+    let dim = Z :. numNeurons :. numNeurons
     !rs <- randomArray (exponential delayBeta) dim :: IO (Array DIM2 Float)
     let
       f v = v' A.> maxDelayDT A.? (1,v')
@@ -68,20 +58,27 @@ initDelays dim =
       !arr = run1 (A.map f) rs
     return arr
 
-latConnMultInit, latConnMult :: Float
-latConnMultInit = 5
-latConnMult = latConnMultInit
-
-weiMax, wieMax, wiiMax :: Float
-weiMax = 20.0 * 4.32 / latConnMult
-wieMax = 0.5 * 4.32 / latConnMult
-wiiMax = 0.5 * 4.32 / latConnMult
+initW'
+  :: ( C.HasWixMul s Float
+     , C.HasLatConnMult s Float
+     , C.HasWeiMul s Float
+     , C.HasNumI s Int
+     , C.HasNumE s Int
+     )
+  => s
+  -> IO (Array DIM2 Float)
+initW' c =
+  initW (c ^. C.numE) (c ^. C.numI)
+  (c ^. C.weiMax) (c ^. C.wieMax) (c ^. C.wiiMax)
 
 initW
   :: Int -- ^ num excitory
   -> Int -- ^ num inhibitory
+  -> Float -- ^ weiMax
+  -> Float -- ^ wieMax
+  -> Float -- ^ wiiMax
   -> IO (Array DIM2 Float)
-initW numE numI =
+initW numE numI weiMax wieMax wiiMax =
   do
     let
       numNeurons = numE + numI
@@ -99,17 +96,30 @@ initW numE numI =
       !w = run $ A.zipWith (*) (A.use rs) (A.use m)
     return w
 
-wffInitMin, wffInitMax, maxW :: Exp Float
-wffInitMin = 0.0
-wffInitMax = 0.1
-maxW = 50.0
+initWff'
+  :: ( C.HasMaxW s Float
+     , C.HasWffInitMax s Float
+     , C.HasWffInitMin s Float
+     , C.HasPatchSize s Int
+     , C.HasNumI s Int
+     , C.HasNumE s Int)
+  => s
+  -> IO (Array DIM2 Float)
+initWff' c =
+  initWff (c ^. C.numE) (c ^. C.numI) (c ^. C.ffrfSize)
+  (A.constant $ c ^. C.wffInitMin)
+  (A.constant $ c ^. C.wffInitMax)
+  (A.constant $ c ^. C.maxW)
 
 initWff
   :: Int -- ^ num excitory
   -> Int -- ^ num inhibitory
   -> Int -- ^ feedforward size
+  -> Exp Float -- ^ wffInitMin
+  -> Exp Float -- ^ wffInitMax
+  -> Exp Float -- ^ maxW
   -> IO (Array DIM2 Float)
-initWff numE numI ffrfSize =
+initWff numE numI ffrfSize wffInitMin wffInitMax maxW =
   do
     let
       numNeurons = numE + numI
@@ -125,53 +135,75 @@ initWff numE numI ffrfSize =
       !w = run $ A.map scaleWeights $ A.zipWith (*) (A.use rs) (A.use m)
     return w
 
-vStim, negNoiseRate, posNoiseRate :: Float
-vStim = 1.0
-negNoiseRate = 0.0
-posNoiseRate = 1.8
-
-numNoiseSteps :: Int
-numNoiseSteps = 73333
+initPosNoiseIn'
+  :: ( C.HasVstim s Float
+     , C.HasPosNoiseRate s Float
+     , C.HasNumNoiseSteps s Int
+     , C.HasNumI s Int
+     , C.HasNumE s Int
+     )
+  => s
+  -> IO (Array DIM2 Float)
+initPosNoiseIn' c =
+  initPosNoiseIn (c ^. C.numE) (c ^. C.numI) (c ^. C.numNoiseSteps)
+  (c ^. C.posNoiseRate) (A.constant $ c ^. C.vstim)
 
 -- | Initial positive poisson array
 initPosNoiseIn
   :: Int -- ^ num excitory
   -> Int -- ^ num inhibitory
+  -> Int -- ^ numNoiseSteps
+  -> Float -- ^ posNoiseRate
+  -> Exp Float -- ^ vstim
   -> IO (Array DIM2 Float)
-initPosNoiseIn numE numI =
+initPosNoiseIn numE numI numNoiseSteps posNoiseRate vstim =
   do
     let
       numNeurons = numE + numI
       dim = Z :. numNoiseSteps :. numNeurons
     !rs <- randomArray (poisson posNoiseRate) dim :: IO (Array DIM2 Float)
-    let !arr = run1 (A.map ((* A.constant vStim))) rs
+    let !arr = run1 (A.map (* vstim)) rs
     return arr
+
+initNegNoiseIn'
+  :: ( C.HasVstim s Float
+     , C.HasNegNoiseRate s Float
+     , C.HasNumNoiseSteps s Int
+     , C.HasNumI s Int
+     , C.HasNumE s Int
+     )
+  => s
+  -> IO (Array DIM2 Float)
+initNegNoiseIn' c =
+  initNegNoiseIn (c ^. C.numE) (c ^. C.numI) (c ^. C.numNoiseSteps)
+  (c ^. C.negNoiseRate) (A.constant $ c ^. C.vstim)
 
 initNegNoiseIn
   :: Int -- ^ num excitory
   -> Int -- ^ num inhibitory
+  -> Int -- ^ numNoiseSteps
+  -> Float -- ^ negNoiseRate
+  -> Exp Float -- ^ vstim
   -> IO (Array DIM2 Float)
-initNegNoiseIn numE numI =
+initNegNoiseIn numE numI numNoiseSteps negNoiseRate vstim =
   do
     let
       numNeurons = numE + numI
       dim = Z :. numNoiseSteps :. numNeurons
     !rs <- randomArray (poisson negNoiseRate) dim :: IO (Array DIM2 Float)
-    let !arr = run1 (A.map (A.negate . (* A.constant vStim))) rs
+    let !arr = run1 (A.map (A.negate . (* vstim))) rs
     return arr
 
-dt :: Float
-dt = 1.0
-
-presTime, presTimeLearning :: Float
-presTimeLearning = 350 -- ms
-presTime = presTimeLearning
-
-numStepsPerPres :: Float
-numStepsPerPres = presTime / dt
-
-timeZeroInput :: Float
-timeZeroInput = 100
+initALTDS'
+  :: ( C.HasRandALTD s Float
+     , C.HasBaseALTD s Float
+     , C.HasNumI s Int
+     , C.HasNumE s Int
+     )
+  => s
+  -> IO (Vector Float)
+initALTDS' c =
+  initALTDS (c ^. C.numE) (c ^. C.numI) (c ^. C.baseALTD) (c ^. C.randALTD)
 
 initALTDS
   :: Int -- ^ num excitory
@@ -187,13 +219,30 @@ initALTDS numE numI baseALTD randALTD =
           run1 (A.map (\r -> A.constant baseALTD + A.constant randALTD * r)) rs
     return arr
 
+randomForFFSpikes'
+  :: ( C.HasTimeZeroInput s Float
+     , C.HasDt s Float
+     , C.HasPresTime s Float
+     , C.HasPatchSize s Int
+     )
+  => s
+  -> Int
+  -> IO (Array DIM5 Float)
+randomForFFSpikes' c =
+  randomForFFSpikes
+  (c ^. C.imageSize)
+  (c ^. C.numStepsPerPres)
+  (c ^. C.numStepsZeroInput)
+
 randomForFFSpikes
   :: DIM2 -- ^ image size, (ydim,xdim)
+  -> Int -- ^ numStepsPerPres
+  -> Int -- ^ numStepsZeroInput
   -> Int -- ^ number of images for this chunk
   -> IO (Array DIM5 Float)
-randomForFFSpikes (Z :. ydim :. xdim) numImages =
+randomForFFSpikes (Z :. ydim :. xdim) numStepsPerPres numStepsZeroInput numImages =
   let
-    steps = P.round $ numStepsPerPres - timeZeroInput / dt
+    steps = numStepsPerPres - numStepsZeroInput
     dim = (Z :. numImages :. steps :. 2 :. ydim :. xdim)
   in
     randomArray (uniformR (0,1)) dim
