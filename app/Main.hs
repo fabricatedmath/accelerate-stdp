@@ -72,35 +72,35 @@ main =
       (w,wff,existingSpikes,rs,A.singleton 0)
     print $ "dogs"
 
-vUpdate
-  :: ( C.HasAccStateV s (Acc (Array sh Float))
-     , C.HasAccStateVThresh s (Acc (Array sh Float))
-     , C.HasAccStateZ s (Acc (Array sh Float))
-     , C.HasAccStateWadap s (Acc (Array sh Float))
-     , C.HasAccStateIsSpiking s (Acc (Array sh Int))
+preSpikeUpdates
+  :: ( C.HasAccStateV s (Acc (Vector Float))
+     , C.HasAccStateVThresh s (Acc (Vector Float))
+     , C.HasAccStateZ s (Acc (Vector Float))
+     , C.HasAccStateWadap s (Acc (Vector Float))
+     , C.HasAccStateIsSpiking s (Acc (Vector Int))
      , C.HasNoSpike c Bool, C.HasConstIsp c Float
      , C.HasGLeak c Float, C.HasELeak c Float, C.HasDeltaT c Float
      , C.HasVPeak c Float, C.HasDt c Float, C.HasMinv c Float
-     , C.HasVtMax c Float
-     , C.HasConstB c Float, C.HasConstC c Float, Shape sh
+     , C.HasVtMax c Float, C.HasConstB c Float, C.HasConstC c Float
      )
   => c
   -> s
-  -> Acc (Array sh Float)
+  -> Acc (Vector Float)
   -> s
-vUpdate c s i =
+preSpikeUpdates c s inputs =
   let
     vthresh = s ^. C.accStateVThresh
     z = s ^. C.accStateZ
     wadap = s ^. C.accStateWadap
     isSpiking = s ^. C.accStateIsSpiking
+
     v' =
       A.map (A.max minv) $
       A.zipWith g isSpiking $
-      A.zipWith5 f v vthresh z wadap i
+      A.zipWith5 f v vthresh z wadap inputs
       where
-        f vi vti zi wadapi ii =
-          (dt/constC) * (-gLeak * (vi-eLeak) + expTerm + zi - wadapi) + ii
+        f vi vti zi wi ii =
+          (dt/constC) * (-gLeak * (vi-eLeak) + expTerm + zi - wi) + ii
           where
             expTerm
               | c ^. C.noSpike = 0
@@ -110,22 +110,27 @@ vUpdate c s i =
             deltaT = A.constant $ c ^. C.deltaT
             dt = A.constant $ c ^. C.dt
             constC = A.constant $ c ^. C.constC
-        g spikei vi =
-          spikei A.== 1 A.? (vReset,
-          spikei A.> 0 A.? (vPeak-0.001,vi))
+        g si vi = si A.== 1 A.? (vReset, si A.> 0 A.? (vPeak-0.001,vi))
           where
             vReset = A.constant $ c ^. C.vReset
             vPeak = A.constant $ c ^. C.vPeak
         minv = A.constant $ c ^. C.minv
         v = s ^. C.accStateV
+
     z' = A.zipWith (\spikei zi -> spikei A.== 1 A.? (constIsp,zi)) isSpiking z
-         where constIsp = A.constant $ c ^. C.constIsp
+      where
+        constIsp = A.constant $ c ^. C.constIsp
+
     vthresh' =
       A.zipWith (\si vti -> si A.== 1 A.? (vtMax,vti)) isSpiking vthresh
-      where vtMax = A.constant $ c ^. C.vtMax
+      where
+        vtMax = A.constant $ c ^. C.vtMax
+
     wadap' =
-      A.zipWith (\si wi -> si A.== 1 A.? (wi + constB, wi)) isSpiking wadap
-      where constB = A.constant $ c ^. C.constB
+      A.zipWith (+) wadap $ A.map (\si -> si A.== 1 A.? (constB, 0)) isSpiking
+      where
+        constB = A.constant $ c ^. C.constB
+
     isSpiking' = A.map (A.max 0) $ A.map (subtract 1) isSpiking
   in
     C.accStateIsSpiking .~ isSpiking' $
@@ -133,6 +138,14 @@ vUpdate c s i =
     C.accStateVThresh .~ vthresh' $
     C.accStateZ .~ z' $
     C.accStateV .~ v' $ s
+{-
+spikeUpdate c s
+  | c ^. C.noSpike = (s, A.fill (Z :. numNeurons) 0)
+    where numNeurons = c ^. C.numNeurons
+  | otherwise =
+    let
+      firing
+-}
 
 func
   :: ( C.HasNumNoiseSteps c Int
