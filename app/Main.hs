@@ -77,12 +77,12 @@ vUpdate
      , C.HasAccStateVThresh s (Acc (Array sh Float))
      , C.HasAccStateZ s (Acc (Array sh Float))
      , C.HasAccStateWadap s (Acc (Array sh Float))
-     , C.HasAccStateIsSpiking s (Acc (Array sh a))
+     , C.HasAccStateIsSpiking s (Acc (Array sh Int))
      , C.HasNoSpike c Bool, C.HasConstIsp c Float
      , C.HasGLeak c Float, C.HasELeak c Float, C.HasDeltaT c Float
      , C.HasVPeak c Float, C.HasDt c Float, C.HasMinv c Float
      , C.HasVtMax c Float
-     , C.HasConstB c Float, C.HasConstC c Float, A.Ord a, Num (Exp a), Shape sh
+     , C.HasConstB c Float, C.HasConstC c Float, Shape sh
      )
   => c
   -> s
