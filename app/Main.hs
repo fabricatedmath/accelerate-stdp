@@ -191,23 +191,37 @@ spikeUpdate c s delays
       (s',firings)
 
 
-stateTest :: C.Constants -> S.State C.AccState ()
-stateTest c =
+postSpikeUpdate
+  :: C.Constants
+  -> Acc (Vector Bool)
+  -> Acc (Vector Float)
+  -> S.State C.AccState ()
+postSpikeUpdate c firings lgnfirings =
   do
-    let a = 5 in do (return ())
-    let
-      constA = c ^. C.constA
-      in do
-      return ()
-    do
+    do -- wadap
+      wadap <- use C.accStateWadap
       v <- use C.accStateV
-      let v' = A.map (+constC) v
-          constC = A.constant $ c ^. C.constC
-      C.accStateV .= v
-    do
-      a <- use C.accStateVPrev
-      C.accStateV .= a
-      --    C.accStateV .= v
+      let f wi vi = wi + (dt / tauADAP) * (constA * (vi - eLeak) - wi)
+            where dt = A.constant $ c ^. C.dt
+                  constA = A.constant $ c ^. C.constA
+                  tauADAP = A.constant $ c ^. C.tauADAP
+                  eLeak = A.constant $ c ^. C.eLeak
+      C.accStateWadap .= A.zipWith f wadap v
+
+    do -- z
+      z <- use C.accStateZ
+      let f zi = zi + (dt/tauZ) * (-1.0) * zi
+            where dt = A.constant $ c ^. C.dt
+                  tauZ = A.constant $ c ^. C.tauZ
+      C.accStateZ .= A.map f z
+
+    do --vthresh
+      vthresh <- use C.accStateVThresh
+      let f vti = vti + (dt/tauVThresh) * ((-1.0) * vti + vtRest)
+            where dt = A.constant $ c ^. C.dt
+                  tauVThresh = A.constant $ c ^. C.tauVThresh
+                  vtRest = A.constant $ c ^. C.vtRest
+      C.accStateVThresh .= A.map f vthresh
 
     do -- vlongtrace
       vlongtrace <- use C.accStateVLongTrace
@@ -220,10 +234,19 @@ stateTest c =
       C.accStateVLongTrace .= (A.map (A.max 0) $ A.zipWith f vlongtrace vprev)
 
     do --xplastLat
-      return ()
+      xplastLat <- use C.accStateXPlastLat
+      let firings' = A.map (A.fromIntegral . A.boolToInt) firings
+          f xi fi = xi + fi / tauXPlast - (dt / tauXPlast) * xi
+            where dt = A.constant $ c ^. C.dt
+                  tauXPlast = A.constant $ c ^. C.tauXPlast
+      C.accStateXPlastLat .= A.zipWith f xplastLat firings'
 
     do --xplastFF
-      return ()
+      xplastFF <- use C.accStateXPlastFF
+      let f xi lfi = xi + lfi / tauXPlast - (dt/tauXPlast) * xi
+            where dt = A.constant $ c ^. C.dt
+                  tauXPlast = A.constant $ c ^. C.tauXPlast
+      C.accStateXPlastFF .= A.zipWith f xplastFF lgnfirings
 
     do -- vneg
       vneg <- use C.accStateVNeg
@@ -241,15 +264,13 @@ stateTest c =
                   tauVPos = A.constant $ c ^. C.tauVPos
       C.accStateVPos .= A.zipWith f vpos vprev
 
-    return ()
-
-postSpikeUpdate
+postSpikeUpdateExplicit
   :: C.Constants
   -> C.AccState
   -> Acc (Vector Bool)
   -> Acc (Vector Float)
   -> C.AccState
-postSpikeUpdate c s firings lgnfirings =
+postSpikeUpdateExplicit c s firings lgnfirings =
   let
     wadap = s ^. C.accStateWadap
     dt = A.constant $ c ^. C.dt
