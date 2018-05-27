@@ -209,7 +209,23 @@ stateTest c =
       C.accStateV .= a
       --    C.accStateV .= v
 
-    do
+    do -- vlongtrace
+      vlongtrace <- use C.accStateVLongTrace
+      vprev <- use C.accStateVPrev
+      let f vli vpi =
+            vli + (dt/tauVLongTrace) * (A.max 0 (vpi - thetaVLongTrace) - vli)
+            where dt = A.constant $ c ^. C.dt
+                  tauVLongTrace = A.constant $ c ^. C.tauVLongTrace
+                  thetaVLongTrace = A.constant $ c ^. C.thetaVLongTrace
+      C.accStateVLongTrace .= (A.map (A.max 0) $ A.zipWith f vlongtrace vprev)
+
+    do --xplastLat
+      return ()
+
+    do --xplastFF
+      return ()
+
+    do -- vneg
       vneg <- use C.accStateVNeg
       vprev <- use C.accStateVPrev
       let f vi vpi = vi + (dt/tauVNeg) * (vpi - vi)
@@ -217,7 +233,7 @@ stateTest c =
                   tauVNeg = A.constant $ c ^. C.tauVNeg
       C.accStateVNeg .= A.zipWith f vneg vprev
 
-    do
+    do -- vpos
       vpos <- use C.accStateVPos
       vprev <- use C.accStateVPrev
       let f vi vpi = vi + (dt/tauVPos) * (vpi - vi)
