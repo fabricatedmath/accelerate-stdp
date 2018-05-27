@@ -18,7 +18,7 @@ data Constants =
   , _randALTD :: Float
   , _altp :: Float
   , _minv :: Float
-  , _tauvlongtrace :: Float
+  , _tauVLongTrace :: Float
   , _latConnMult :: Float
 
   , _numI :: Int
@@ -122,7 +122,7 @@ defaultConstants =
 
   , _altp = (8e-5 * 0.008 * 1.0)
   , _minv = -80
-  , _tauvlongtrace = 20000
+  , _tauVLongTrace = 20000
   , _latConnMult = 5
 
   , _numI = 20

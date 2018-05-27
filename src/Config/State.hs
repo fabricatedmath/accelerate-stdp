@@ -14,6 +14,7 @@ data AccState =
   { _accStateW :: Acc (Matrix Float)
   , _accStateWff :: Acc (Matrix Float)
   , _accStateV :: Acc (Vector Float)
+  , _accStateVPrev :: Acc (Vector Float)
   , _accStateVThresh :: Acc (Vector Float)
   , _accStateVNeg :: Acc (Vector Float)
   , _accStateVPos :: Acc (Vector Float)
@@ -33,6 +34,7 @@ data State =
   { _stateW :: Matrix Float
   , _stateWff :: Matrix Float
   , _stateV :: Vector Float
+  , _stateVPrev :: Vector Float
   , _stateVThresh :: Vector Float
   , _stateVNeg :: Vector Float
   , _stateVPos :: Vector Float
@@ -48,32 +50,34 @@ data State =
 makeFieldsNoPrefix ''State
 
 matrixStateToStateTup :: State -> StateTup
-matrixStateToStateTup matState =
-  ( matState ^. stateW
-  , matState ^. stateWff
-  , matState ^. stateV
-  , matState ^. stateVThresh
-  , matState ^. stateVNeg
-  , matState ^. stateVPos
-  , matState ^. stateVLongTrace
-  , matState ^. stateXPlastLat
-  , matState ^. stateXPlastFF
-  , matState ^. stateIsSpiking
-  , matState ^. stateWadap
-  , matState ^. stateZ
-  , matState ^. stateExistingSpikes
+matrixStateToStateTup s =
+  ( s ^. stateW
+  , s ^. stateWff
+  , s ^. stateV
+  , s ^. stateVPrev
+  , s ^. stateVThresh
+  , s ^. stateVNeg
+  , s ^. stateVPos
+  , s ^. stateVLongTrace
+  , s ^. stateXPlastLat
+  , s ^. stateXPlastFF
+  , s ^. stateIsSpiking
+  , s ^. stateWadap
+  , s ^. stateZ
+  , s ^. stateExistingSpikes
   )
 
 type StateTup =
   ( Matrix Float -- w
   , Matrix Float -- wff
   , Vector Float -- v
+  , Vector Float -- vprev
   , Vector Float -- vthresh
   , Vector Float -- vneg
   , Vector Float -- vpos
   , Vector Float -- vlongtrace
-  , Vector Float -- xPlastLat
-  , Vector Float -- xPlastFF
+  , Vector Float -- xplastLat
+  , Vector Float -- xplastFF
   , Vector Float -- isspiking
   , Vector Float -- wadap
   , Vector Float -- z
@@ -83,13 +87,14 @@ type StateTup =
 toAccState :: Acc StateTup -> AccState
 toAccState acc =
   let
-    (w,wff,v,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes)
+    (w,wff,v,vprev,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes)
       = A.unlift acc
   in
     AccState
     { _accStateW = w
     , _accStateWff = wff
     , _accStateV = v
+    , _accStateVPrev = vprev
     , _accStateVThresh = vthresh
     , _accStateVNeg = vneg
     , _accStateVPos = vpos

@@ -151,7 +151,9 @@ spikeUpdate
   => c
   -> s
   -> Acc (Matrix Int)
-  -> (s, Acc (Vector Bool))
+  -> (s -- ^ State'
+     , Acc (Vector Bool) -- ^ firings
+     )
 spikeUpdate c s delays
   | c ^. C.noSpike =
     let
@@ -186,6 +188,80 @@ spikeUpdate c s delays
         C.accStateV .~ v' $ s
     in
       (s',firings)
+
+postSpikeUpdate
+  :: C.Constants
+  -> C.AccState
+  -> Acc (Vector Bool)
+  -> Acc (Vector Float)
+  -> C.AccState
+postSpikeUpdate c s firings lgnfirings =
+  let
+    wadap = s ^. C.accStateWadap
+    dt = A.constant $ c ^. C.dt
+    v = s ^. C.accStateV
+    vprev = s ^. C.accStateVPrev
+    tauXPlast = A.constant $ c ^. C.tauXPlast
+
+    wadap' = A.zipWith f wadap v
+      where
+        f wi vi = wi + (dt/tauADAP) * (constA * (vi - eLeak) - wi)
+        constA = A.constant $ c ^. C.constA
+        eLeak = A.constant $ c ^. C.eLeak
+        tauADAP = A.constant $ c ^. C.tauADAP
+
+    z' = A.map f z
+      where
+        f zi = zi + (dt/tauZ) * (-1.0) * zi
+        z = s ^. C.accStateZ
+        tauZ = A.constant $ c ^. C.tauZ
+
+    vthresh' = A.map f vthresh
+      where
+        f vti = vti + (dt/tauVThresh) * ((-1.0) * vti + vtRest)
+        vthresh = s ^. C.accStateVThresh
+        tauVThresh = A.constant $ c ^. C.tauVThresh
+        vtRest = A.constant $ c ^. C.vtRest
+
+    vlongtrace' = A.map (A.max 0) $ A.zipWith f vlongtrace vprev
+      where
+        f vli vpi =
+          vli + (dt/tauVLongTrace) * (A.max 0 (vpi - thetaVLongTrace) - vli)
+        vlongtrace = s ^. C.accStateVLongTrace
+        tauVLongTrace = A.constant $ c ^. C.tauVLongTrace
+        thetaVLongTrace = A.constant $ c ^. C.thetaVLongTrace
+
+    xplastLat' = A.zipWith f xplastLat firings'
+      where
+        f xi fi = xi + fi / tauXPlast - (dt / tauXPlast) * xi
+        xplastLat = s ^. C.accStateXPlastLat
+        firings' = A.map (A.fromIntegral . A.boolToInt) firings
+
+    xplastFF' = A.zipWith f xplastFF lgnfirings
+      where
+        f xi lfi = xi + lfi / tauXPlast - (dt/tauXPlast) * xi
+        xplastFF = s ^. C.accStateXPlastFF
+
+    vneg' = A.zipWith f vneg vprev
+      where
+        f vi vpi = vi + (dt/tauVNeg) * (vpi - vi)
+        vneg = s ^. C.accStateVNeg
+        tauVNeg = A.constant $ c ^. C.tauVNeg
+
+    vpos' = A.zipWith f vpos vprev
+      where
+        f vi vpi = vi + (dt/tauVPos) * (vpi - vi)
+        vpos = s ^. C.accStateVPos
+        tauVPos = A.constant $ c ^. C.tauVPos
+  in
+    C.accStateWadap .~ wadap' $
+    C.accStateZ .~ z' $
+    C.accStateVThresh .~ vthresh' $
+    C.accStateVLongTrace .~ vlongtrace' $
+    C.accStateXPlastLat .~ xplastLat' $
+    C.accStateXPlastFF .~ xplastFF' $
+    C.accStateVNeg .~ vneg' $
+    C.accStateVPos .~ vpos' $ s
 
 func
   :: ( C.HasNumNoiseSteps c Int
