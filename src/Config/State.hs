@@ -21,10 +21,10 @@ data AccState =
   , _accStateVLongTrace :: Acc (Vector Float)
   , _accStateXPlastLat :: Acc (Vector Float)
   , _accStateXPlastFF :: Acc (Vector Float)
-  , _accStateIsSpiking :: Acc (Vector Float)
+  , _accStateIsSpiking :: Acc (Vector Int)
   , _accStateWadap :: Acc (Vector Float)
   , _accStateZ :: Acc (Vector Float)
-  , _accStateExistingSpikes :: Acc (Matrix Float)
+  , _accStateExistingSpikes :: Acc (Matrix Int)
   }
 
 makeFieldsNoPrefix ''AccState
@@ -41,10 +41,10 @@ data State =
   , _stateVLongTrace :: Vector Float
   , _stateXPlastLat :: Vector Float
   , _stateXPlastFF :: Vector Float
-  , _stateIsSpiking :: Vector Float
+  , _stateIsSpiking :: Vector Int
   , _stateWadap :: Vector Float
   , _stateZ :: Vector Float
-  , _stateExistingSpikes :: Matrix Float
+  , _stateExistingSpikes :: Matrix Int
   }
 
 makeFieldsNoPrefix ''State
@@ -78,10 +78,10 @@ type StateTup =
   , Vector Float -- vlongtrace
   , Vector Float -- xplastLat
   , Vector Float -- xplastFF
-  , Vector Float -- isspiking
+  , Vector Int -- isspiking
   , Vector Float -- wadap
   , Vector Float -- z
-  , Matrix Float -- existingSpikes
+  , Matrix Int -- existingSpikes
   )
 
 toAccState :: Acc StateTup -> AccState
