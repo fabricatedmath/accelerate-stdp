@@ -25,10 +25,10 @@ import Data.Array.Accelerate.Numeric.LinearAlgebra ((#>))
 addIncomingSpike
   :: Exp Int -- ^ delay num steps
   -> Exp Int -- ^ existing spikes
-  -> Exp Int -- ^ incoming spike
+  -> Exp Bool -- ^ incoming spike
   -> Exp Int -- ^ existing spikes'
 addIncomingSpike delay existingSpikes incomingSpike =
-  incomingSpike * bit delay .|. existingSpikes
+  (A.boolToInt incomingSpike) * bit delay .|. existingSpikes
 
 -- | Advances queued spikes by 1
 -- spikes are represented as a queue of length delay in bit shifts

@@ -6,6 +6,7 @@
 module Main where
 
 import Control.Lens
+import Control.Monad (when)
 
 import Data.Array.Accelerate
   ( Array
@@ -55,8 +56,9 @@ main =
     !dataset <-
       run1 (fullDatasetAugmentation' constants)
       <$> loadDataset' constants "dog.dat"
-    !w <- initW' constants
+    !w <- initW' $ C.numI .~ 2 $ C.numE .~ 4 $ constants
     print w
+    when False $ exitSuccess
     print $ run1 A.sum w
     !wff <- initWff' constants
     let
@@ -138,14 +140,52 @@ preSpikeUpdates c s inputs =
     C.accStateVThresh .~ vthresh' $
     C.accStateZ .~ z' $
     C.accStateV .~ v' $ s
-{-
-spikeUpdate c s
-  | c ^. C.noSpike = (s, A.fill (Z :. numNeurons) 0)
-    where numNeurons = c ^. C.numNeurons
+
+spikeUpdate
+  :: ( C.HasAccStateV s (Acc (Vector Float))
+     , C.HasAccStateIsSpiking s (Acc (Vector Int))
+     , C.HasAccStateExistingSpikes s (Acc (Matrix Int))
+     , C.HasNumE c Int, C.HasNumI c Int, C.HasNumSpikingSteps c Int
+     , C.HasVPeak c Float, C.HasNoSpike c Bool
+     )
+  => c
+  -> s
+  -> Acc (Matrix Int)
+  -> (s, Acc (Vector Bool))
+spikeUpdate c s delays
+  | c ^. C.noSpike =
+    let
+      numNeurons = c ^. C.numNeurons
+    in
+      (s, A.fill (A.constant $ Z :. numNeurons) $ A.constant False)
   | otherwise =
     let
-      firing
--}
+      v = s ^. C.accStateV
+      vpeak = A.constant $ c ^. C.vPeak
+      firings = A.map (A.> vpeak) v
+
+      v' = A.zipWith (\fi vi -> fi A.? (vpeak,vi)) firings v
+
+      isSpiking' =
+        A.zipWith (\fi si -> fi A.? (numSpikingSteps,si)) firings isSpiking
+        where
+          isSpiking = s ^. C.accStateIsSpiking
+          numSpikingSteps = A.constant $ c ^. C.numSpikingSteps
+
+      existingSpikes' =
+        A.zipWith3 addIncomingSpike delays existingSpikes incomingSpikes
+        where
+          incomingSpikes =
+            A.replicate (A.constant $ Z :. numNeurons :. All) firings
+            where numNeurons = c ^. C.numNeurons
+          existingSpikes = s ^. C.accStateExistingSpikes
+
+      s' =
+        C.accStateExistingSpikes .~ existingSpikes' $
+        C.accStateIsSpiking .~ isSpiking' $
+        C.accStateV .~ v' $ s
+    in
+      (s',firings)
 
 func
   :: ( C.HasNumNoiseSteps c Int

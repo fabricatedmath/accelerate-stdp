@@ -23,6 +23,7 @@ data AccState =
   , _accStateIsSpiking :: Acc (Vector Float)
   , _accStateWadap :: Acc (Vector Float)
   , _accStateZ :: Acc (Vector Float)
+  , _accStateExistingSpikes :: Acc (Matrix Float)
   }
 
 makeFieldsNoPrefix ''AccState
@@ -41,6 +42,7 @@ data State =
   , _stateIsSpiking :: Vector Float
   , _stateWadap :: Vector Float
   , _stateZ :: Vector Float
+  , _stateExistingSpikes :: Matrix Float
   }
 
 makeFieldsNoPrefix ''State
@@ -59,6 +61,7 @@ matrixStateToStateTup matState =
   , matState ^. stateIsSpiking
   , matState ^. stateWadap
   , matState ^. stateZ
+  , matState ^. stateExistingSpikes
   )
 
 type StateTup =
@@ -74,12 +77,13 @@ type StateTup =
   , Vector Float -- isspiking
   , Vector Float -- wadap
   , Vector Float -- z
+  , Matrix Float -- existingSpikes
   )
 
 toAccState :: Acc StateTup -> AccState
 toAccState acc =
   let
-    (w,wff,v,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z)
+    (w,wff,v,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes)
       = A.unlift acc
   in
     AccState
@@ -95,4 +99,5 @@ toAccState acc =
     , _accStateIsSpiking = isspiking
     , _accStateWadap = wadap
     , _accStateZ = z
+    , _accStateExistingSpikes = existingSpikes
     }
