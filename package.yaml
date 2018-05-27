@@ -27,6 +27,7 @@ dependencies:
 - accelerate-llvm-native
 - accelerate-llvm-ptx
 - lens-accelerate
+- mtl
 - mwc-random-accelerate
 - accelerate-blas
 - lens

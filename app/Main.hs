@@ -7,6 +7,7 @@ module Main where
 
 import Control.Lens
 import Control.Monad (when)
+import Control.Monad.State as S
 
 import Data.Array.Accelerate
   ( Array
@@ -188,6 +189,43 @@ spikeUpdate c s delays
         C.accStateV .~ v' $ s
     in
       (s',firings)
+
+
+stateTest :: C.Constants -> S.State C.AccState ()
+stateTest c =
+  do
+    let a = 5 in do (return ())
+    let
+      constA = c ^. C.constA
+      in do
+      return ()
+    do
+      v <- use C.accStateV
+      let v' = A.map (+constC) v
+          constC = A.constant $ c ^. C.constC
+      C.accStateV .= v
+    do
+      a <- use C.accStateVPrev
+      C.accStateV .= a
+      --    C.accStateV .= v
+
+    do
+      vneg <- use C.accStateVNeg
+      vprev <- use C.accStateVPrev
+      let f vi vpi = vi + (dt/tauVNeg) * (vpi - vi)
+            where dt = A.constant $ c ^. C.dt
+                  tauVNeg = A.constant $ c ^. C.tauVNeg
+      C.accStateVNeg .= A.zipWith f vneg vprev
+
+    do
+      vpos <- use C.accStateVPos
+      vprev <- use C.accStateVPrev
+      let f vi vpi = vi + (dt/tauVPos) * (vpi - vi)
+            where dt = A.constant $ c ^. C.dt
+                  tauVPos = A.constant $ c ^. C.tauVPos
+      C.accStateVPos .= A.zipWith f vpos vprev
+
+    return ()
 
 postSpikeUpdate
   :: C.Constants
