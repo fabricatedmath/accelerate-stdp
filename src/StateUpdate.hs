@@ -125,109 +125,81 @@ spikeUpdate delays =
           return firings
 
 postSpikeUpdate
-  :: Constants
-  -> Acc (Vector Bool)
-  -> Acc (Vector Float)
-  -> State S.AccState ()
-postSpikeUpdate c firings lgnfirings =
+  :: Acc (Vector Bool) -- ^ firings
+  -> Acc (Vector Float) -- ^ lgnfirings
+  -> Env ()
+postSpikeUpdate firings lgnfirings =
   do
     do -- wadap
       wadap <- use S.accStateWadap
       v <- use S.accStateV
+      dt <- A.constant <$> view C.dt
+      constA <- A.constant <$> view C.constA
+      tauADAP <- A.constant <$> view C.tauADAP
+      eLeak <- A.constant <$> view C.eLeak
       let f wi vi = wi + (dt / tauADAP) * (constA * (vi - eLeak) - wi)
-            where dt = A.constant $ c ^. C.dt
-                  constA = A.constant $ c ^. C.constA
-                  tauADAP = A.constant $ c ^. C.tauADAP
-                  eLeak = A.constant $ c ^. C.eLeak
       S.accStateWadap .= A.zipWith f wadap v
 
     do -- z
       z <- use S.accStateZ
+      dt <- A.constant <$> view C.dt
+      tauZ <- A.constant <$> view C.tauZ
       let f zi = zi + (dt / tauZ) * (-1.0) * zi
-            where dt = A.constant $ c ^. C.dt
-                  tauZ = A.constant $ c ^. C.tauZ
       S.accStateZ .= A.map f z
 
     do --vthresh
       vthresh <- use S.accStateVThresh
+      dt <- A.constant <$> view C.dt
+      tauVThresh <- A.constant <$> view C.tauVThresh
+      vtRest <- A.constant <$> view C.vtRest
       let f vti = vti + (dt / tauVThresh) * ((-1.0) * vti + vtRest)
-            where dt = A.constant $ c ^. C.dt
-                  tauVThresh = A.constant $ c ^. C.tauVThresh
-                  vtRest = A.constant $ c ^. C.vtRest
       S.accStateVThresh .= A.map f vthresh
 
     do -- vlongtrace
       vlongtrace <- use S.accStateVLongTrace
       vprev <- use S.accStateVPrev
+      dt <- A.constant <$> view C.dt
+      tauVLongTrace <- A.constant <$> view C.tauVLongTrace
+      thetaVLongTrace <- A.constant <$> view C.thetaVLongTrace
       let f vli vpi =
             vli + (dt / tauVLongTrace) * (A.max 0 (vpi - thetaVLongTrace) - vli)
-            where dt = A.constant $ c ^. C.dt
-                  tauVLongTrace = A.constant $ c ^. C.tauVLongTrace
-                  thetaVLongTrace = A.constant $ c ^. C.thetaVLongTrace
       S.accStateVLongTrace .= (A.map (A.max 0) $ A.zipWith f vlongtrace vprev)
 
     do --xplastLat
       xplastLat <- use S.accStateXPlastLat
+      dt <- A.constant <$> view C.dt
+      tauXPlast <- A.constant <$> view C.tauXPlast
       let firings' = A.map (A.fromIntegral . A.boolToInt) firings
           f xi fi = xi + fi / tauXPlast - (dt / tauXPlast) * xi
-            where dt = A.constant $ c ^. C.dt
-                  tauXPlast = A.constant $ c ^. C.tauXPlast
       S.accStateXPlastLat .= A.zipWith f xplastLat firings'
 
     do --xplastFF
       xplastFF <- use S.accStateXPlastFF
+      dt <- A.constant <$> view C.dt
+      tauXPlast <- A.constant <$> view C.tauXPlast
       let f xi lfi = xi + lfi / tauXPlast - (dt/tauXPlast) * xi
-            where dt = A.constant $ c ^. C.dt
-                  tauXPlast = A.constant $ c ^. C.tauXPlast
       S.accStateXPlastFF .= A.zipWith f xplastFF lgnfirings
 
     do -- vneg
       vneg <- use S.accStateVNeg
       vprev <- use S.accStateVPrev
+      dt <- A.constant <$> view C.dt
+      tauVNeg <- A.constant <$> view C.tauVNeg
       let f vi vpi = vi + (dt/tauVNeg) * (vpi - vi)
-            where dt = A.constant $ c ^. C.dt
-                  tauVNeg = A.constant $ c ^. C.tauVNeg
       S.accStateVNeg .= A.zipWith f vneg vprev
 
     do -- vpos
       vpos <- use S.accStateVPos
       vprev <- use S.accStateVPrev
+      dt <- A.constant <$> view C.dt
+      tauVPos <- A.constant <$> view C.tauVPos
       let f vi vpi = vi + (dt/tauVPos) * (vpi - vi)
-            where dt = A.constant $ c ^. C.dt
-                  tauVPos = A.constant $ c ^. C.tauVPos
       S.accStateVPos .= A.zipWith f vpos vprev
 
-
 computeEachNeurLTD
-  :: ( C.HasDt p Float, C.HasELeak p Float, C.HasVref2 p Float
-     , S.HasAccStateVNeg s (Acc (Vector Float))
-     , S.HasAccStateVLongTrace s (Acc (Vector Float))
-     , MonadState s m
-     )
-  => p -- ^ Constants
-  -> Acc (Vector Float)
-  -> m (Acc (Vector Float))
-computeEachNeurLTD c altds =
-  do
-    vlongtrace <- use S.accStateVLongTrace
-    vneg <- use S.accStateVNeg
-    let f altdi vli vni =
-          dt * ((-altdi/vref2) * vli * vli * A.max 0 (vni - thetaVNeg))
-          where dt = A.constant $ c ^. C.dt
-                thetaVNeg = A.constant $ c ^. C.thetaVNeg
-                vref2 = A.constant $ c ^. C.vref2
-    return $ A.zipWith3 f altds vlongtrace vneg
-
-computeEachNeurLTD'
-  :: ( C.HasDt r Float, C.HasELeak r Float, C.HasVref2 r Float
-     , S.HasAccStateVNeg s (Acc (Vector Float))
-     , S.HasAccStateVLongTrace s (Acc (Vector Float))
-     , MonadState s m
-     , MonadReader r m
-     )
-  => Acc (Vector Float)
-  -> m (Acc (Vector Float))
-computeEachNeurLTD' altds =
+  :: Acc (Vector Float) -- ^ altds
+  -> Env (Acc (Vector Float)) -- ^ EachNeurLTD
+computeEachNeurLTD altds =
   do
     dt <- A.constant <$> view C.dt
     thetaVNeg <- A.constant <$> view C.thetaVNeg
@@ -239,86 +211,73 @@ computeEachNeurLTD' altds =
     return $ A.zipWith3 f altds vlongtrace vneg
 
 computeEachNeurLTP
-  :: ( C.HasDt p Float, C.HasAltp p Float, C.HasAltpMult p Float
-     , C.HasELeak p Float, C.HasThetaVPos p Float
-     , S.HasAccStateVPos s (Acc (Vector Float))
-     , S.HasAccStateV s (Acc (Vector Float))
-     , MonadState s m
-     )
-  => p
-  -> m (Acc (Vector Float))
-computeEachNeurLTP c =
+  :: Env (Acc (Vector Float)) -- ^ EachNeurLTP
+computeEachNeurLTP =
   do
     v <- use S.accStateV
     vpos <- use S.accStateVPos
+    dt <- A.constant <$> view C.dt
+    altp <- A.constant <$> view C.altp
+    altpMult <- A.constant <$> view C.altpMult
+    thetaVNeg <- A.constant <$> view C.thetaVNeg
+    thetaVPos <- A.constant <$> view C.thetaVPos
     let f vpi vi =
           dt * altp * altpMult *
           (A.max 0 (vpi - thetaVNeg) * A.max 0 (vi - thetaVPos))
-          where dt = A.constant $ c ^. C.dt
-                altp = A.constant $ c ^. C.altp
-                altpMult = A.constant $ c ^. C.altpMult
-                thetaVNeg = A.constant $ c ^. C.thetaVNeg
-                thetaVPos = A.constant $ c ^. C.thetaVPos
     return $ A.zipWith f vpos v
 
 learning
-  :: Constants
-  -> Acc (Vector Float) -- ^ ALTDS
+  :: Acc (Vector Float) -- ^ ALTDS
   -> Acc (Vector Float) -- ^ lgnfirings
   -> Acc (Matrix Bool) -- ^ spikesThisStep
-  -> State S.AccState ()
-learning c altds lgnfirings spikesThisStep =
+  -> Env ()
+learning altds lgnfirings spikesThisStep =
   do
-    eachNeurLTD <- computeEachNeurLTD c altds
-    eachNeurLTP <- computeEachNeurLTP c
+    eachNeurLTD <- computeEachNeurLTD altds
+    eachNeurLTP <- computeEachNeurLTP
 
     do -- wff
       xplastFF <- use S.accStateXPlastFF
       wff <- use S.accStateWff
+      numNeurons <- view C.numNeurons
+      ffrfSize <- view C.ffrfSize
+      wpenScale <- A.constant <$> view C.wpenScale
+      maxW <- A.constant <$> view C.maxW
       let
-        xplastFF' =
-          A.replicate (A.constant $ Z :. numNeurons :. All) xplastFF
-          where numNeurons = c ^. C.numNeurons
+        xplastFF' = A.replicate (A.constant $ Z :. numNeurons :. All) xplastFF
         eachNeurLTP' =
           A.replicate (A.constant $ Z :. All :. ffrfSize) eachNeurLTP
-          where ffrfSize = c ^. C.ffrfSize
         eachNeurLTD' =
           A.replicate (A.constant $ Z :. All :. ffrfSize) eachNeurLTD
-          where ffrfSize = c ^. C.ffrfSize
         lgnfirings' =
           A.map (A.> 1e-6) $
           A.replicate (A.constant $ Z :. numNeurons :. All) lgnfirings
-          where numNeurons = c ^. C.numNeurons
         f wffi xi ltpi ltdi lfi =
           lfi A.? (wffi' + ltdi * (1 + wffi' * wpenScale),wffi')
           where wffi' = wffi + xi * ltpi
-                wpenScale = A.constant $ c ^. C.wpenScale
         clampWff = A.map (A.max 0 . A.min maxW)
-          where maxW = A.constant $ c ^. C.maxW
         wff' = A.zipWith5 f wff xplastFF' eachNeurLTP' eachNeurLTD' lgnfirings'
       S.accStateWff .= clampWff wff'
 
     do -- w
       xplastLat <- use $ S.accStateXPlastLat
       w <- use S.accStateW
+      numNeurons <- view C.numNeurons
+      wpenScale <- A.constant <$> view C.wpenScale
+      numE <- A.constant <$> view C.numE
+      maxW <- A.constant <$> view C.maxW
       let
         xplastLat' =
           A.replicate (A.constant $ Z :. numNeurons :. All) xplastLat
-          where numNeurons = c ^. C.numNeurons
         eachNeurLTP' =
           A.replicate (A.constant $ Z :. All :. numNeurons) eachNeurLTP
-          where numNeurons = c ^. C.numNeurons
         eachNeurLTD' =
           A.replicate (A.constant $ Z :. All :. numNeurons) eachNeurLTD
-          where numNeurons = c ^. C.numNeurons
         f wi xi ltpi ltdi si = si A.? (wi' + ltdi * (1 + wi * wpenScale),wi')
           where wi' = wi + xi * ltpi
-                wpenScale = A.constant $ c ^. C.wpenScale
         w' = A.zipWith5 f w xplastLat' eachNeurLTP' eachNeurLTD' spikesThisStep
         clampW = A.map (A.min maxW) . A.imap g
           where g sh wi =
                   (y A.== x A.? (0, x A.< numE A.? (max 0 wi, min 0 wi)))
                   where (y,x) = A.unlift $ A.unindex2 sh
-                        numE = A.constant $ c ^. C.numE
-                maxW = A.constant $ c ^. C.maxW
       S.accStateW .= clampW w'
