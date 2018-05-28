@@ -16,105 +16,113 @@ import qualified Config.Constants as C
 import qualified Config.State as S
 
 import Acc
+import Config
 
 preSpikeUpdate
-  :: Constants
-  -> Acc (Vector Float)
-  -> State S.AccState ()
-preSpikeUpdate c inputs =
+  :: Acc (Vector Float) -- ^ inputs
+  -> Env ()
+preSpikeUpdate inputs =
   do
     do -- v
+      f <-
+        do
+          gLeak <- A.constant <$> view C.gLeak
+          eLeak <- A.constant <$> view C.eLeak
+          deltaT <- A.constant <$> view C.deltaT
+          dt <- A.constant <$> view C.dt
+          constC <- A.constant <$> view C.constC
+          noSpike <- view C.noSpike
+          let f vi vti zi wi ii =
+                (dt/constC) * (-gLeak * (vi-eLeak) + expTerm + zi - wi) + ii
+                where expTerm
+                        | noSpike = 0
+                        | otherwise = gLeak * deltaT * exp ((vi - vti) / deltaT)
+          return f
+      g <-
+        do
+          vReset <- A.constant <$> view C.vReset
+          vPeak <- A.constant <$> view C.vPeak
+          let g si vi =
+                A.caseof si [((A.== 1),vReset), ((A.> 0),vPeak-0.001)] vi
+          return g
       v <- use S.accStateV
       vthresh <- use S.accStateVThresh
       z <- use S.accStateZ
       isSpiking <- use S.accStateIsSpiking
       wadap <- use S.accStateWadap
-      let f vi vti zi wi ii =
-            (dt/constC) * (-gLeak * (vi-eLeak) + expTerm + zi - wi) + ii
-            where
-              expTerm
-                | c ^. C.noSpike = 0
-                | otherwise = gLeak * deltaT * exp ((vi - vti) / deltaT)
-              gLeak = A.constant $ c ^. C.gLeak
-              eLeak = A.constant $ c ^. C.eLeak
-              deltaT = A.constant $ c ^. C.deltaT
-              dt = A.constant $ c ^. C.dt
-              constC = A.constant $ c ^. C.constC
-          g si vi =
-            A.caseof si [((A.== 1),vReset), ((A.> 0),vPeak-0.001)] vi
-            where
-              vReset = A.constant $ c ^. C.vReset
-              vPeak = A.constant $ c ^. C.vPeak
-          v' = A.map (A.max minv) $
-               A.zipWith g isSpiking $
-               A.zipWith5 f v vthresh z wadap inputs
-            where minv = A.constant $ c ^. C.minv
-      S.accStateV .= v'
+      minv <- A.constant <$> view C.minv
+      S.accStateV .=
+        (A.map (A.max minv) $
+         A.zipWith g isSpiking $
+         A.zipWith5 f v vthresh z wadap inputs
+        )
 
     do -- z
       z <- use S.accStateZ
       isSpiking <- use S.accStateIsSpiking
+      constIsp <- A.constant <$> view C.constIsp
       let f si zi = si A.== 1 A.? (constIsp,zi)
-            where constIsp = A.constant $ c ^. C.constIsp
       S.accStateZ .= A.zipWith f isSpiking z
 
     do -- vthresh
       vthresh <- use S.accStateVThresh
       isSpiking <- use S.accStateIsSpiking
+      vtMax <- A.constant <$> view C.vtMax
       let f si vti = si A.== 1 A.? (vtMax,vti)
-            where vtMax = A.constant $ c ^. C.vtMax
       S.accStateVThresh .= A.zipWith f isSpiking vthresh
 
     do -- wadap
       wadap <- use S.accStateWadap
       isSpiking <- use S.accStateIsSpiking
+      constB <- A.constant <$> view C.constB
       let f si = si A.== 1 A.? (constB,0)
-            where constB = A.constant $ c ^. C.constB
       S.accStateWadap .= (A.zipWith (+) wadap $ A.map f isSpiking)
 
     do -- isSpiking
       isSpiking <- use S.accStateIsSpiking
       S.accStateIsSpiking .= (A.map (A.max 0) $ A.map (subtract 1) isSpiking)
 
-
 spikeUpdate
-  :: Constants
-  -> Acc (Matrix Int) -- ^ delays
-  -> State S.AccState (Acc (Vector Bool)) -- ^ firings
-spikeUpdate c delays
-  | c ^. C.noSpike =
-    let numNeurons = c ^. C.numNeurons
-        firings = A.fill (A.constant $ Z :. numNeurons) $ A.constant False
-    in return firings
-  | otherwise =
-    do
-      firings <-
+  :: Acc (Matrix Int) -- ^ delays
+  -> Env (Acc (Vector Bool)) -- ^ firings
+spikeUpdate delays =
+  do
+    noSpike <- view C.noSpike
+    case noSpike of
+      True ->
         do
-          v <- use S.accStateV
-          let vpeak = A.constant $ c ^. C.vPeak
-          return $ A.map (A.> vpeak) v
+          numNeurons <- view C.numNeurons
+          return $ A.fill (A.constant $ Z :. numNeurons) $ A.constant False
+      False ->
+        do
+          firings <-
+            do
+              v <- use S.accStateV
+              vpeak <- A.constant <$> view C.vPeak
+              return $ A.map (A.> vpeak) v
 
-      do -- v
-        v <- use S.accStateV
-        let f vi fi = fi A.? (vpeak,vi)
-            vpeak = A.constant $ c ^. C.vPeak
-        S.accStateV .= A.zipWith f v firings
+          do -- v
+            v <- use S.accStateV
+            vpeak <- A.constant <$> view C.vPeak
+            let f vi fi = fi A.? (vpeak,vi)
+            S.accStateV .= A.zipWith f v firings
 
-      do -- isspiking
-        isSpiking <- use S.accStateIsSpiking
-        let f si fi = fi A.? (numSpikingSteps,si)
-            numSpikingSteps = A.constant $ c ^. C.numSpikingSteps
-        S.accStateIsSpiking .= A.zipWith f isSpiking firings
+          do -- isspiking
+            isSpiking <- use S.accStateIsSpiking
+            numSpikingSteps <- A.constant <$> view C.numSpikingSteps
+            let f si fi = fi A.? (numSpikingSteps,si)
+            S.accStateIsSpiking .= A.zipWith f isSpiking firings
 
-      do -- existingSpikes
-        existingSpikes <- use S.accStateExistingSpikes
-        let numNeurons = c ^. C.numNeurons
-            incomingSpikes =
-              A.replicate (A.constant $ Z :. numNeurons :. All) firings
-        S.accStateExistingSpikes .=
-          A.zipWith3 addIncomingSpike delays existingSpikes incomingSpikes
+          do -- existingSpikes
+            existingSpikes <- use S.accStateExistingSpikes
+            numNeurons <- view C.numNeurons
+            let
+              incomingSpikes =
+                A.replicate (A.constant $ Z :. numNeurons :. All) firings
+            S.accStateExistingSpikes .=
+              A.zipWith3 addIncomingSpike delays existingSpikes incomingSpikes
 
-      return firings
+          return firings
 
 postSpikeUpdate
   :: Constants
