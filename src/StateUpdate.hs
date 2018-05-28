@@ -3,6 +3,7 @@
 module StateUpdate where
 
 import Control.Lens
+import Control.Monad.Reader
 import Control.Monad.State
 
 import Data.Array.Accelerate
@@ -188,6 +189,70 @@ postSpikeUpdate c firings lgnfirings =
                   tauVPos = A.constant $ c ^. C.tauVPos
       S.accStateVPos .= A.zipWith f vpos vprev
 
+
+computeEachNeurLTD
+  :: ( C.HasDt p Float, C.HasELeak p Float, C.HasVref2 p Float
+     , S.HasAccStateVNeg s (Acc (Vector Float))
+     , S.HasAccStateVLongTrace s (Acc (Vector Float))
+     , MonadState s m
+     )
+  => p -- ^ Constants
+  -> Acc (Vector Float)
+  -> m (Acc (Vector Float))
+computeEachNeurLTD c altds =
+  do
+    vlongtrace <- use S.accStateVLongTrace
+    vneg <- use S.accStateVNeg
+    let f altdi vli vni =
+          dt * ((-altdi/vref2) * vli * vli * A.max 0 (vni - thetaVNeg))
+          where dt = A.constant $ c ^. C.dt
+                thetaVNeg = A.constant $ c ^. C.thetaVNeg
+                vref2 = A.constant $ c ^. C.vref2
+    return $ A.zipWith3 f altds vlongtrace vneg
+
+computeEachNeurLTD'
+  :: ( C.HasDt r Float, C.HasELeak r Float, C.HasVref2 r Float
+     , S.HasAccStateVNeg s (Acc (Vector Float))
+     , S.HasAccStateVLongTrace s (Acc (Vector Float))
+     , MonadState s m
+     , MonadReader r m
+     )
+  => Acc (Vector Float)
+  -> m (Acc (Vector Float))
+computeEachNeurLTD' altds =
+  do
+    dt <- A.constant <$> view C.dt
+    thetaVNeg <- A.constant <$> view C.thetaVNeg
+    vref2 <- A.constant <$> view C.vref2
+    let f altdi vli vni =
+          dt * ((-altdi/vref2) * vli * vli * A.max 0 (vni - thetaVNeg))
+    vlongtrace <- use S.accStateVLongTrace
+    vneg <- use S.accStateVNeg
+    return $ A.zipWith3 f altds vlongtrace vneg
+
+computeEachNeurLTP
+  :: ( C.HasDt p Float, C.HasAltp p Float, C.HasAltpMult p Float
+     , C.HasELeak p Float, C.HasThetaVPos p Float
+     , S.HasAccStateVPos s (Acc (Vector Float))
+     , S.HasAccStateV s (Acc (Vector Float))
+     , MonadState s m
+     )
+  => p
+  -> m (Acc (Vector Float))
+computeEachNeurLTP c =
+  do
+    v <- use S.accStateV
+    vpos <- use S.accStateVPos
+    let f vpi vi =
+          dt * altp * altpMult *
+          (A.max 0 (vpi - thetaVNeg) * A.max 0 (vi - thetaVPos))
+          where dt = A.constant $ c ^. C.dt
+                altp = A.constant $ c ^. C.altp
+                altpMult = A.constant $ c ^. C.altpMult
+                thetaVNeg = A.constant $ c ^. C.thetaVNeg
+                thetaVPos = A.constant $ c ^. C.thetaVPos
+    return $ A.zipWith f vpos v
+
 learning
   :: Constants
   -> Acc (Vector Float) -- ^ ALTDS
@@ -196,30 +261,8 @@ learning
   -> State S.AccState ()
 learning c altds lgnfirings spikesThisStep =
   do
-    eachNeurLTD <-
-      do
-        vlongtrace <- use S.accStateVLongTrace
-        vneg <- use S.accStateVNeg
-        let f altdi vli vni =
-              dt * ((-altdi/vref2) * vli * vli * A.max 0 (vni - thetaVNeg))
-              where dt = A.constant $ c ^. C.dt
-                    thetaVNeg = A.constant $ c ^. C.thetaVNeg
-                    vref2 = A.constant $ c ^. C.vref2
-        return $ A.zipWith3 f altds vlongtrace vneg
-
-    eachNeurLTP <-
-      do
-        v <- use S.accStateV
-        vpos <- use S.accStateVPos
-        let f vpi vi =
-              dt * altp * altpMult *
-              (A.max 0 (vpi - thetaVNeg) * A.max 0 (vi - thetaVPos))
-              where dt = A.constant $ c ^. C.dt
-                    altp = A.constant $ c ^. C.altp
-                    altpMult = A.constant $ c ^. C.altpMult
-                    thetaVNeg = A.constant $ c ^. C.thetaVNeg
-                    thetaVPos = A.constant $ c ^. C.thetaVPos
-        return $ A.zipWith f vpos v
+    eachNeurLTD <- computeEachNeurLTD c altds
+    eachNeurLTP <- computeEachNeurLTP c
 
     do -- wff
       xplastFF <- use S.accStateXPlastFF
