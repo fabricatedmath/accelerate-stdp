@@ -187,3 +187,90 @@ postSpikeUpdate c firings lgnfirings =
             where dt = A.constant $ c ^. C.dt
                   tauVPos = A.constant $ c ^. C.tauVPos
       S.accStateVPos .= A.zipWith f vpos vprev
+
+learning
+  :: Constants
+  -> Acc (Vector Float) -- ^ ALTDS
+  -> Acc (Vector Float) -- ^ lgnfirings
+  -> Acc (Matrix Bool) -- ^ spikesThisStep
+  -> State S.AccState ()
+learning c altds lgnfirings spikesThisStep =
+  do
+    eachNeurLTD <-
+      do
+        vlongtrace <- use S.accStateVLongTrace
+        vneg <- use S.accStateVNeg
+        let f altdi vli vni =
+              dt * ((-altdi/vref2) * vli * vli * A.max 0 (vni - thetaVNeg))
+              where dt = A.constant $ c ^. C.dt
+                    thetaVNeg = A.constant $ c ^. C.thetaVNeg
+                    vref2 = A.constant $ c ^. C.vref2
+        return $ A.zipWith3 f altds vlongtrace vneg
+
+    eachNeurLTP <-
+      do
+        v <- use S.accStateV
+        vpos <- use S.accStateVPos
+        let f vpi vi =
+              dt * altp * altpMult *
+              (A.max 0 (vpi - thetaVNeg) * A.max 0 (vi - thetaVPos))
+              where dt = A.constant $ c ^. C.dt
+                    altp = A.constant $ c ^. C.altp
+                    altpMult = A.constant $ c ^. C.altpMult
+                    thetaVNeg = A.constant $ c ^. C.thetaVNeg
+                    thetaVPos = A.constant $ c ^. C.thetaVPos
+        return $ A.zipWith f vpos v
+
+    do -- wff
+      xplastFF <- use S.accStateXPlastFF
+      wff <- use S.accStateWff
+      let
+        xplastFF' =
+          A.replicate (A.constant $ Z :. numNeurons :. All) xplastFF
+          where numNeurons = c ^. C.numNeurons
+        eachNeurLTP' =
+          A.replicate (A.constant $ Z :. All :. ffrfSize) eachNeurLTP
+          where ffrfSize = c ^. C.ffrfSize
+        eachNeurLTD' =
+          A.replicate (A.constant $ Z :. All :. ffrfSize) eachNeurLTD
+          where ffrfSize = c ^. C.ffrfSize
+        lgnfirings' =
+          A.map (A.> 1e-6) $
+          A.replicate (A.constant $ Z :. numNeurons :. All) lgnfirings
+          where numNeurons = c ^. C.numNeurons
+        f wffi xi ltpi ltdi lfi =
+          lfi A.? (wffi' + ltdi * (1 + wffi' * wpenScale),wffi')
+          where wffi' = wffi + xi * ltpi
+                wpenScale = A.constant $ c ^. C.wpenScale
+        clampWff = A.map (A.max 0 . A.min maxW)
+          where maxW = A.constant $ c ^. C.maxW
+        wff' = A.zipWith5 f wff xplastFF' eachNeurLTP' eachNeurLTD' lgnfirings'
+      S.accStateWff .= clampWff wff'
+
+    do -- w
+      xplastLat <- use $ S.accStateXPlastLat
+      w <- use S.accStateW
+      let
+        xplastLat' =
+          A.replicate (A.constant $ Z :. numNeurons :. All) xplastLat
+          where numNeurons = c ^. C.numNeurons
+        eachNeurLTP' =
+          A.replicate (A.constant $ Z :. All :. numNeurons) eachNeurLTP
+          where numNeurons = c ^. C.numNeurons
+        eachNeurLTD' =
+          A.replicate (A.constant $ Z :. All :. numNeurons) eachNeurLTD
+          where numNeurons = c ^. C.numNeurons
+        f wi xi ltpi ltdi si = si A.? (wi' + ltdi * (1 + wi * wpenScale),wi')
+          where wi' = wi + xi * ltpi
+                wpenScale = A.constant $ c ^. C.wpenScale
+        w' = A.zipWith5 f w xplastLat' eachNeurLTP' eachNeurLTD' spikesThisStep
+        clampW = A.imap g
+          where g sh wi =
+                  let (y,x) = A.unlift $ A.unindex2 sh
+                  in
+                    A.min maxW $
+                    (y A.== x A.? (0, x A.< numE A.? (max 0 wi, min 0 wi)))
+                numE = A.constant $ c ^. C.numE
+                maxW = A.constant $ c ^. C.maxW
+                --numI = A.constant $ c ^. numI
+      S.accStateW .= clampW w'
