@@ -264,13 +264,10 @@ learning c altds lgnfirings spikesThisStep =
           where wi' = wi + xi * ltpi
                 wpenScale = A.constant $ c ^. C.wpenScale
         w' = A.zipWith5 f w xplastLat' eachNeurLTP' eachNeurLTD' spikesThisStep
-        clampW = A.imap g
+        clampW = A.map (A.min maxW) . A.imap g
           where g sh wi =
-                  let (y,x) = A.unlift $ A.unindex2 sh
-                  in
-                    A.min maxW $
-                    (y A.== x A.? (0, x A.< numE A.? (max 0 wi, min 0 wi)))
-                numE = A.constant $ c ^. C.numE
+                  (y A.== x A.? (0, x A.< numE A.? (max 0 wi, min 0 wi)))
+                  where (y,x) = A.unlift $ A.unindex2 sh
+                        numE = A.constant $ c ^. C.numE
                 maxW = A.constant $ c ^. C.maxW
-                --numI = A.constant $ c ^. numI
       S.accStateW .= clampW w'

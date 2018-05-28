@@ -45,7 +45,7 @@ data State =
   , _stateWadap :: Vector Float
   , _stateZ :: Vector Float
   , _stateExistingSpikes :: Matrix Int
-  }
+  } deriving Show
 
 makeFieldsNoPrefix ''State
 
