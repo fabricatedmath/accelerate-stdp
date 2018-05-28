@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module StateUpdate where
 
 import Control.Lens
@@ -13,6 +15,66 @@ import qualified Config.Constants as C
 import qualified Config.State as S
 
 import Acc
+
+preSpikeUpdate
+  :: Constants
+  -> Acc (Vector Float)
+  -> State S.AccState ()
+preSpikeUpdate c inputs =
+  do
+    do -- v
+      v <- use S.accStateV
+      vthresh <- use S.accStateVThresh
+      z <- use S.accStateZ
+      isSpiking <- use S.accStateIsSpiking
+      wadap <- use S.accStateWadap
+      let f vi vti zi wi ii =
+            (dt/constC) * (-gLeak * (vi-eLeak) + expTerm + zi - wi) + ii
+            where
+              expTerm
+                | c ^. C.noSpike = 0
+                | otherwise = gLeak * deltaT * exp ((vi - vti) / deltaT)
+              gLeak = A.constant $ c ^. C.gLeak
+              eLeak = A.constant $ c ^. C.eLeak
+              deltaT = A.constant $ c ^. C.deltaT
+              dt = A.constant $ c ^. C.dt
+              constC = A.constant $ c ^. C.constC
+          g si vi =
+            A.caseof si [((A.== 1),vReset), ((A.> 0),vPeak-0.001)] vi
+            where
+              vReset = A.constant $ c ^. C.vReset
+              vPeak = A.constant $ c ^. C.vPeak
+          v' = A.map (A.max minv) $
+               A.zipWith g isSpiking $
+               A.zipWith5 f v vthresh z wadap inputs
+            where minv = A.constant $ c ^. C.minv
+      S.accStateV .= v'
+
+    do -- z
+      z <- use S.accStateZ
+      isSpiking <- use S.accStateIsSpiking
+      let f si zi = si A.== 1 A.? (constIsp,zi)
+            where constIsp = A.constant $ c ^. C.constIsp
+      S.accStateZ .= A.zipWith f isSpiking z
+
+    do -- vthresh
+      vthresh <- use S.accStateVThresh
+      isSpiking <- use S.accStateIsSpiking
+      let f si vti = si A.== 1 A.? (vtMax,vti)
+            where vtMax = A.constant $ c ^. C.vtMax
+      S.accStateVThresh .= A.zipWith f isSpiking vthresh
+
+    do -- wadap
+      wadap <- use S.accStateWadap
+      isSpiking <- use S.accStateIsSpiking
+      let f si = si A.== 1 A.? (constB,0)
+            where constB = A.constant $ c ^. C.constB
+      S.accStateWadap .= (A.zipWith (+) wadap $ A.map f isSpiking)
+
+    do -- isSpiking
+      isSpiking <- use S.accStateIsSpiking
+      S.accStateIsSpiking .= (A.map (A.max 0) $ A.map (subtract 1) isSpiking)
+
 
 spikeUpdate
   :: Constants
