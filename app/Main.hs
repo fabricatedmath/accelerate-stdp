@@ -298,6 +298,8 @@ func c dataset delays posNoiseIn negNoiseIn acc =
       A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
     (spikes, existingSpikes') = A.unzip $ A.map ratchetSpikes existingSpikes -- spikes == spikesthisstep
 
+    posNoiseSlice = pullNoise posNoiseIn numStepA
+    negNoiseSlice =
     inputs = computeInputs vstim latConnMult numNoiseSteps
              posNoiseIn negNoiseIn numStepA w wff lgnfirings spikes
   in
