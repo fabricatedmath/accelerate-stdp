@@ -26,6 +26,7 @@ dependencies:
 - accelerate-llvm
 - accelerate-llvm-native
 - accelerate-llvm-ptx
+- deepseq
 - lens-accelerate
 - mtl
 - mwc-random-accelerate

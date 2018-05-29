@@ -1,89 +1,96 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Inits
-  ( initDelays, initDelays'
-  , initW, initW'
-  , initWff, initWff'
-  , initALTDS, initALTDS'
-  , initPosNoiseIn, initPosNoiseIn'
-  , initNegNoiseIn, initNegNoiseIn'
-  , randomForFFSpikes, randomForFFSpikes'
-  ) where
+module Inits where
 
+import Control.DeepSeq
 import Control.Lens
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Reader
 
 import Data.Array.Accelerate
-  ( Array, Vector
-  , DIM1, DIM2, DIM5
+  ( Vector, Matrix
+  , DIM1, DIM2
   , (:.)(..), Z(..)
-  , Exp
   )
 
 import qualified Data.Array.Accelerate as A
 
-import Data.Array.Accelerate.LLVM.PTX
+import Data.Array.Accelerate.LLVM.Native
 import Data.Array.Accelerate.System.Random.MWC
 import Data.Array.Accelerate.System.Random.Extra
 
 import Prelude as P
 
 import qualified Config.Constants as C
+import qualified Config.State as S
 
-initDelays'
-  :: ( C.HasMaxDelayDT s Int
-     , C.HasDelayBeta s Float
-     , C.HasNumE s Int
-     , C.HasNumI s Int
-     )
-  => s
-  -> IO (Array DIM2 Int)
-initDelays' c =
-  initDelays (c ^. C.numNeurons) (c ^. C.delayBeta)
-  (A.constant $ c ^. C.maxDelayDT)
-
--- | Initial Delay Matrix
-initDelays
-  :: Int -- ^ numNeurons
-  -> Float -- ^ delayBeta
-  -> Exp Int -- ^ maxDelayDT
-  -> IO (Array DIM2 Int)
-initDelays numNeurons delayBeta maxDelayDT =
+initState :: ReaderT C.Constants IO S.State
+initState =
   do
+    w <- initW
+    wff <- initWff
+    v <- initV
+    vprev <- initVPrev
+    vthresh <- initVThresh
+    vneg <- initVNeg
+    vpos <- initVPos
+    vlongtrace <- initVLongTrace
+    xplastLat <- initXPlastLat
+    xplastFF <- initXPlastFF
+    isSpiking <- initIsSpiking
+    wadap <- initWadap
+    z <- initZ
+    existingSpikes <- initExistingSpikes
+    let
+      !s =
+        S.State
+        { S._stateW = w
+        , S._stateWff = wff
+        , S._stateV = v
+        , S._stateVPrev = vprev
+        , S._stateVThresh = vthresh
+        , S._stateVNeg = vneg
+        , S._stateVPos = vpos
+        , S._stateVLongTrace = vlongtrace
+        , S._stateXPlastLat = xplastLat
+        , S._stateXPlastFF = xplastFF
+        , S._stateIsSpiking = isSpiking
+        , S._stateWadap = wadap
+        , S._stateZ = z
+        , S._stateExistingSpikes = existingSpikes
+        }
+    s `deepseq` return s
+
+
+initDelays
+  :: ReaderT C.Constants IO (Matrix Int)
+     -- ^ delays (Z :. numNeurons :. numNeurons)
+initDelays =
+  do
+    numNeurons <- view C.numNeurons
+    delayBeta <- view C.delayBeta
+    maxDelayDT <- A.constant <$> view C.maxDelayDT
     let dim = Z :. numNeurons :. numNeurons
-    !rs <- randomArray (exponential delayBeta) dim :: IO (Array DIM2 Float)
+    !rs <- liftIO $ randomArray (exponential delayBeta) dim
     let
       f v = v' A.> maxDelayDT A.? (1,v')
         where v' = A.max 1 $ A.round v
-      !arr = run1 (A.map f) rs
-    return arr
-
-initW'
-  :: ( C.HasWixMul s Float
-     , C.HasLatConnMult s Float
-     , C.HasWeiMul s Float
-     , C.HasNumI s Int
-     , C.HasNumE s Int
-     )
-  => s
-  -> IO (Array DIM2 Float)
-initW' c =
-  initW (c ^. C.numE) (c ^. C.numI)
-  (c ^. C.weiMax) (c ^. C.wieMax) (c ^. C.wiiMax)
+      !delays = run1 (A.map f) rs
+    return delays
 
 initW
-  :: Int -- ^ num excitory
-  -> Int -- ^ num inhibitory
-  -> Float -- ^ weiMax
-  -> Float -- ^ wieMax
-  -> Float -- ^ wiiMax
-  -> IO (Array DIM2 Float)
-initW numE numI weiMax wieMax wiiMax =
+  :: ReaderT C.Constants IO (Matrix Float)
+     -- ^ w (Z :. numNeurons :. numNeurons)
+initW =
   do
-    let
-      numNeurons = numE + numI
-      dim = Z :. numNeurons :. numNeurons
-    !rs <- randomArray (uniformR (0,1)) dim
+    numNeurons <- view C.numNeurons
+    numE <- view C.numE
+    wiiMax <- view C.wiiMax
+    weiMax <- view C.weiMax
+    wieMax <- view C.wieMax
+    let dim = Z :. numNeurons :. numNeurons
+    !rs <- liftIO $ randomArray (uniformR (0,1)) dim
     let
       f :: DIM2 -> Float
       f (Z :. y :. x)
@@ -92,133 +99,181 @@ initW numE numI weiMax wieMax wiiMax =
         | y >= numE && x < numE = weiMax -- e to i
         | y < numE && x >= numE = -wieMax -- i to e
         | otherwise = 0
-      !m = A.fromFunction (Z :. numNeurons :. numNeurons) f
+      !m = A.fromFunction dim f
       !w = run $ A.zipWith (*) (A.use rs) (A.use m)
     return w
 
-initWff'
-  :: ( C.HasMaxW s Float
-     , C.HasWffInitMax s Float
-     , C.HasWffInitMin s Float
-     , C.HasPatchSize s Int
-     , C.HasNumI s Int
-     , C.HasNumE s Int)
-  => s
-  -> IO (Array DIM2 Float)
-initWff' c =
-  initWff (c ^. C.numE) (c ^. C.numI) (c ^. C.ffrfSize)
-  (A.constant $ c ^. C.wffInitMin)
-  (A.constant $ c ^. C.wffInitMax)
-  (A.constant $ c ^. C.maxW)
-
 initWff
-  :: Int -- ^ num excitory
-  -> Int -- ^ num inhibitory
-  -> Int -- ^ feedforward size
-  -> Exp Float -- ^ wffInitMin
-  -> Exp Float -- ^ wffInitMax
-  -> Exp Float -- ^ maxW
-  -> IO (Array DIM2 Float)
-initWff numE numI ffrfSize wffInitMin wffInitMax maxW =
+  :: ReaderT C.Constants IO (Matrix Float)
+     -- ^ wff (Z :. numNeurons :. ffrfSize)
+initWff =
   do
+    numNeurons <- view C.numNeurons
+    ffrfSize <- view C.ffrfSize
+    numE <- view C.numE
+    wffInitMax <- A.constant <$> view C.wffInitMax
+    wffInitMin <- A.constant <$> view C.wffInitMin
+    maxW <- A.constant <$> view C.maxW
+    let dim = Z :. numNeurons :. ffrfSize
+    !rs <- liftIO $ randomArray (uniformR (0,1)) dim
     let
-      numNeurons = numE + numI
-      dim = Z :. numNeurons :. ffrfSize
-    !rs <- randomArray (uniformR (0,1)) dim
-    let
-      f :: DIM2 -> Float
+      f :: DIM2 -> Bool
       f (Z :. y :. _x)
-        | y >= numE = 0
-        | otherwise = 1
-      scaleWeights v = A.min maxW $ v * (wffInitMax - wffInitMin) + wffInitMin
-      !m = A.fromFunction (Z :. numNeurons :. ffrfSize) f
-      !w = run $ A.map scaleWeights $ A.zipWith (*) (A.use rs) (A.use m)
-    return w
+        | y >= numE = False -- set inhibitory to zero for ff
+        | otherwise = True
+      !wff = run1 (A.zipWith g (A.use b) . A.map scaleWeights) rs
+        where g bi vi = bi A.? (vi,0)
+              !b = A.fromFunction (Z :. numNeurons :. ffrfSize) f
+              scaleWeights v =
+                A.min maxW $ v * (wffInitMax - wffInitMin) + wffInitMin
+    return wff
 
-initPosNoiseIn'
-  :: ( C.HasVstim s Float
-     , C.HasPosNoiseRate s Float
-     , C.HasNumNoiseSteps s Int
-     , C.HasNumI s Int
-     , C.HasNumE s Int
-     )
-  => s
-  -> IO (Array DIM2 Float)
-initPosNoiseIn' c =
-  initPosNoiseIn (c ^. C.numE) (c ^. C.numI) (c ^. C.numNoiseSteps)
-  (c ^. C.posNoiseRate) (A.constant $ c ^. C.vstim)
-
--- | Initial positive poisson array
 initPosNoiseIn
-  :: Int -- ^ num excitory
-  -> Int -- ^ num inhibitory
-  -> Int -- ^ numNoiseSteps
-  -> Float -- ^ posNoiseRate
-  -> Exp Float -- ^ vstim
-  -> IO (Array DIM2 Float)
-initPosNoiseIn numE numI numNoiseSteps posNoiseRate vstim =
+  :: ReaderT C.Constants IO (Matrix Float)
+     -- ^ posNoiseIn (Z :. numNoiseSteps :. numNeurons)
+initPosNoiseIn =
   do
-    let
-      numNeurons = numE + numI
-      dim = Z :. numNoiseSteps :. numNeurons
-    !rs <- randomArray (poisson posNoiseRate) dim :: IO (Array DIM2 Float)
-    let !arr = run1 (A.map (* vstim)) rs
-    return arr
-
-initNegNoiseIn'
-  :: ( C.HasVstim s Float
-     , C.HasNegNoiseRate s Float
-     , C.HasNumNoiseSteps s Int
-     , C.HasNumI s Int
-     , C.HasNumE s Int
-     )
-  => s
-  -> IO (Array DIM2 Float)
-initNegNoiseIn' c =
-  initNegNoiseIn (c ^. C.numE) (c ^. C.numI) (c ^. C.numNoiseSteps)
-  (c ^. C.negNoiseRate) (A.constant $ c ^. C.vstim)
-
-initNegNoiseIn
-  :: Int -- ^ num excitory
-  -> Int -- ^ num inhibitory
-  -> Int -- ^ numNoiseSteps
-  -> Float -- ^ negNoiseRate
-  -> Exp Float -- ^ vstim
-  -> IO (Array DIM2 Float)
-initNegNoiseIn numE numI numNoiseSteps negNoiseRate vstim =
-  do
-    let
-      numNeurons = numE + numI
-      dim = Z :. numNoiseSteps :. numNeurons
-    !rs <- randomArray (poisson negNoiseRate) dim :: IO (Array DIM2 Float)
+    numNoiseSteps <- view C.numNoiseSteps
+    numNeurons <- view C.numNeurons
+    posNoiseRate <- view C.posNoiseRate
+    vstim <- A.constant <$> view C.vstim
+    let dim = Z :. numNoiseSteps :. numNeurons
+    !rs <- liftIO $ randomArray (poisson posNoiseRate) dim
     let !arr = run1 (A.map (A.negate . (* vstim))) rs
     return arr
 
-initALTDS'
-  :: ( C.HasRandALTD s Float
-     , C.HasBaseALTD s Float
-     , C.HasNumI s Int
-     , C.HasNumE s Int
-     )
-  => s
-  -> IO (Vector Float)
-initALTDS' c =
-  initALTDS (c ^. C.numE) (c ^. C.numI) (c ^. C.baseALTD) (c ^. C.randALTD)
-
-initALTDS
-  :: Int -- ^ num excitory
-  -> Int -- ^ num inhibitory
-  -> Float -- ^ baseALTD
-  -> Float -- ^ randALTD
-  -> IO (Vector Float)
-initALTDS numE numI baseALTD randALTD =
+initNegNoiseIn
+  :: ReaderT C.Constants IO (Matrix Float)
+     -- ^ negNoiseIn (Z :. numNoiseSteps :. numNeurons)
+initNegNoiseIn =
   do
-    let numNeurons = numE + numI
-    !rs <- randomArray (uniformR (0,1)) (Z :. numNeurons :: DIM1)
-    let !arr =
-          run1 (A.map (\r -> A.constant baseALTD + A.constant randALTD * r)) rs
+    numNoiseSteps <- view C.numNoiseSteps
+    numNeurons <- view C.numNeurons
+    negNoiseRate <- view C.negNoiseRate
+    vstim <- A.constant <$> view C.vstim
+    let dim = Z :. numNoiseSteps :. numNeurons
+    !rs <- liftIO $ randomArray (poisson negNoiseRate) dim
+    let !arr = run1 (A.map (A.negate . (* vstim))) rs
     return arr
 
+initALTDS
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ altds (Z :. numNeurons)
+initALTDS =
+  do
+    numNeurons <- view C.numNeurons
+    baseALTD <- A.constant <$> view C.baseALTD
+    randALTD <- A.constant <$> view C.randALTD
+    !rs <- liftIO $ randomArray (uniformR (0,1)) (Z :. numNeurons :: DIM1)
+    let !arr = run1 (A.map (\r -> baseALTD + randALTD * r)) rs
+    return arr
+
+initV
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ v (Z :. numNeurons)
+initV =
+  do
+    restPotIzh <- view C.restPotIzh
+    numNeurons <- view C.numNeurons
+    let !v = A.fromFunction (Z :. numNeurons) (const restPotIzh)
+    return v
+
+initVPrev
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ vprev (Z :. numNeurons)
+initVPrev = initV
+
+initVNeg
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ vneg (Z :. numNeurons)
+initVNeg = initV
+
+initVPos
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ vpos (Z :. numNeurons)
+initVPos = initV
+
+initVThresh
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ vthresh (Z :. numNeurons)
+initVThresh =
+  do
+    vtRest <- view C.vtRest
+    numNeurons <- view C.numNeurons
+    let !vthresh = A.fromFunction (Z :. numNeurons) (const vtRest)
+    return vthresh
+
+initVLongTrace
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ vlongtrace (Z :. numNeurons)
+initVLongTrace =
+  do
+    restPotIzh <- view C.restPotIzh
+    thetaVLongTrace <- view C.thetaVLongTrace
+    numNeurons <- view C.numNeurons
+    let
+      dim = Z :. numNeurons
+      c = max 0 $ restPotIzh - thetaVLongTrace
+      !vlongtrace = A.fromFunction dim (const c)
+    return vlongtrace
+
+initWadap
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ wadap (Z :. numNeurons)
+initWadap =
+  do
+    numNeurons <- view C.numNeurons
+    let !wadap = A.fromFunction (Z :. numNeurons) (const 0)
+    return wadap
+
+initIsSpiking
+  :: ReaderT C.Constants IO (Vector Int)
+     -- ^ isSpiking (Z :. numNeurons)
+initIsSpiking =
+  do
+    numNeurons <- view C.numNeurons
+    let !isSpiking = A.fromFunction (Z :. numNeurons) (const 0)
+    return isSpiking
+
+initZ
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ z (Z :. numNeurons)
+initZ =
+  do
+    numNeurons <- view C.numNeurons
+    let !z = A.fromFunction (Z :. numNeurons) (const 0)
+    return z
+
+initXPlastFF
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ xplastFF (Z :. ffrfSize)
+initXPlastFF =
+  do
+    ffrfSize <- view C.ffrfSize
+    let !xplastFF = A.fromFunction (Z :. ffrfSize) (const 0)
+    return xplastFF
+
+initXPlastLat
+  :: ReaderT C.Constants IO (Vector Float)
+     -- ^ xplastLat (Z :. numNeurons)
+initXPlastLat =
+  do
+    numNeurons <- view C.numNeurons
+    let !xplastLat = A.fromFunction (Z :. numNeurons) (const 0)
+    return xplastLat
+
+initExistingSpikes
+  :: ReaderT C.Constants IO (Matrix Int)
+     -- ^ existingSpikes (Z :. numNeurons :. numNeurons)
+initExistingSpikes =
+  do
+    numNeurons <- view C.numNeurons
+    let
+      dim = Z :. numNeurons :. numNeurons
+      !existingSpikes = A.fromFunction dim (const 0)
+    return existingSpikes
+
+{-
 randomForFFSpikes'
   :: ( C.HasTimeZeroInput s Float
      , C.HasDt s Float
@@ -246,3 +301,4 @@ randomForFFSpikes (Z :. ydim :. xdim) numStepsPerPres numStepsZeroInput numImage
     dim = (Z :. numImages :. steps :. 2 :. ydim :. xdim)
   in
     randomArray (uniformR (0,1)) dim
+-}

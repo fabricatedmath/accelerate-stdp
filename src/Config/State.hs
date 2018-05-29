@@ -1,13 +1,17 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Config.State where
 
+import Control.DeepSeq
 import Control.Lens
 
 import Data.Array.Accelerate (Vector, Acc, Matrix)
 import qualified Data.Array.Accelerate as A
+
+import GHC.Generics (Generic, Generic1)
 
 data AccState =
   AccState
@@ -45,7 +49,9 @@ data State =
   , _stateWadap :: Vector Float
   , _stateZ :: Vector Float
   , _stateExistingSpikes :: Matrix Int
-  } deriving Show
+  } deriving (Generic, Show)
+
+instance NFData State
 
 makeFieldsNoPrefix ''State
 

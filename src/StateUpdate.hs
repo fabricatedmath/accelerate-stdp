@@ -92,7 +92,8 @@ spikeUpdate delays =
       True ->
         do
           numNeurons <- view C.numNeurons
-          return $ A.fill (A.constant $ Z :. numNeurons) $ A.constant False
+          let firings = A.fill (A.constant $ Z :. numNeurons) $ A.constant False
+          return firings
       False ->
         do
           firings <-

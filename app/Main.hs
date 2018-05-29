@@ -49,6 +49,10 @@ import Dataset
 import Inits
 
 main :: IO ()
+main = print "dogs"
+
+{-
+main :: IO ()
 main =
   do
     let constants = C.defaultConstants
@@ -355,3 +359,4 @@ presentImage timezeroinput numpres image randoms =
         (A.++) state lgnfirings
   in
     A.aiterate' numIterations f image
+-}
