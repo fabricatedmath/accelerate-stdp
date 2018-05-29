@@ -55,8 +55,8 @@ instance NFData State
 
 makeFieldsNoPrefix ''State
 
-matrixStateToStateTup :: State -> StateTup
-matrixStateToStateTup s =
+stateToStateTup :: State -> StateTup
+stateToStateTup s =
   ( s ^. stateW
   , s ^. stateWff
   , s ^. stateV
@@ -90,8 +90,30 @@ type StateTup =
   , Matrix Int -- existingSpikes
   )
 
-toAccState :: Acc StateTup -> AccState
-toAccState acc =
+liftAccState :: AccState -> Acc StateTup
+liftAccState accState =
+  let
+    AccState
+      { _accStateW = w
+      , _accStateWff = wff
+      , _accStateV = v
+      , _accStateVPrev = vprev
+      , _accStateVThresh = vthresh
+      , _accStateVNeg = vneg
+      , _accStateVPos = vpos
+      , _accStateVLongTrace = vlongtrace
+      , _accStateXPlastLat = xplastlat
+      , _accStateXPlastFF = xplastff
+      , _accStateIsSpiking = isspiking
+      , _accStateWadap = wadap
+      , _accStateZ = z
+      , _accStateExistingSpikes = existingSpikes
+      } = accState
+  in
+    A.lift (w,wff,v,vprev,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes)
+
+unliftAccState :: Acc StateTup -> AccState
+unliftAccState acc =
   let
     (w,wff,v,vprev,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes)
       = A.unlift acc

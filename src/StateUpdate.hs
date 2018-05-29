@@ -11,12 +11,13 @@ import Data.Array.Accelerate
 
 import qualified Data.Array.Accelerate as A
 
-import Config.Constants (Constants(..))
 import qualified Config.Constants as C
 import qualified Config.State as S
 
 import Acc
 import Config
+
+--TODO: deal with inputs, dataset, noise, randoms for lgnfirings (Z :. 1000 :. 250 :. 2 :. 17 :. 17)
 
 preSpikeUpdate
   :: Acc (Vector Float) -- ^ inputs
