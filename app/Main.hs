@@ -7,7 +7,8 @@ module Main where
 
 import Control.Lens
 import Control.Monad (when)
-import Control.Monad.State as S
+import Control.Monad.Reader
+import Control.Monad.State
 
 import Data.Array.Accelerate
   ( Array
@@ -49,7 +50,22 @@ import Dataset
 import Inits
 
 main :: IO ()
-main = print "dogs"
+main =
+  do
+    let constants = C.defaultConstants
+    lgnfiringsNoise <- runReaderT generateLgnFiringsNoise constants
+    initialState <- runReaderT initState constants
+    delays <- runReaderT initDelays constants
+    posNoiseIn <- runReaderT initPosNoiseIn constants
+    negNoiseIn <- runReaderT initNegNoiseIn constants
+    altds <- runReaderT initALTDS constants
+    dataset <-
+      runReaderT (loadDataset "dog.dat" >>= fullDatasetAugmentation) constants
+
+
+
+
+    print "done"
 
 {-
 main :: IO ()

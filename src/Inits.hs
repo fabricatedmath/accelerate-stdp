@@ -25,6 +25,18 @@ import Prelude as P
 import qualified Config.Constants as C
 import qualified Config.State as S
 
+generateLgnFiringsNoise
+  :: ReaderT C.Constants IO (Matrix Float)
+     -- ^ (Z :. numStepsPerPres - numStepsZeroInput :. ffrfSize)
+generateLgnFiringsNoise =
+  do
+    numStepsPerPres <- view C.numStepsPerPres
+    numStepsZeroInput <- view C.numStepsZeroInput
+    ffrfSize <- view C.ffrfSize
+    let dim = Z :. numStepsPerPres - numStepsZeroInput :. ffrfSize
+    !rs <- liftIO $ randomArray (uniformR (0,1)) dim
+    rs `seq` return rs
+
 initState :: ReaderT C.Constants IO S.State
 initState =
   do

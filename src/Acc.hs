@@ -5,6 +5,7 @@
 module Acc where
 
 import Control.Lens
+import Control.Monad.Reader
 
 import Data.Array.Accelerate
   ( Array, Arrays
@@ -74,3 +75,13 @@ pullNoise noiseIn numStep =
     (Z :. ydim :. _xdim) = A.arrayShape noiseIn
     noiseStepIndex = A.mod (A.the numStep) $ A.constant ydim
   in A.slice (A.use noiseIn) (A.lift $ Z :. noiseStepIndex :. All)
+
+pullImage
+  :: Matrix Float -- ^ dataset
+  -> Acc (Scalar Int) -- ^ numpres
+  -> Acc (Vector Float) -- ^ image
+pullImage dataset numPres =
+  let
+    (Z :. ydim :. _xdim) = A.arrayShape dataset
+    imageStepIndex = A.mod (A.the numPres) $ A.constant ydim
+  in A.slice (A.use dataset) (A.lift $ Z :. imageStepIndex :. All)

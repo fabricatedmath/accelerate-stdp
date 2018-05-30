@@ -32,7 +32,7 @@ data Constants =
   , _maxW :: Float
   , _vstim :: Float
 
-  , _timeZeroInput :: Int
+  , _timeZeroInput :: Float
 
   , _patchSize :: Int
 

@@ -3,6 +3,7 @@
 module Dataset where
 
 import Control.Lens
+import Control.Monad.Reader
 
 import Data.Array.Accelerate
   ( Array
@@ -14,6 +15,7 @@ import Data.Array.Accelerate
 
 import qualified Data.Array.Accelerate as A
 import qualified Data.Array.Accelerate.Extra as A
+import Data.Array.Accelerate.LLVM.Native
 
 import Data.Array.Accelerate.Control.Lens.Shape (_3)
 import Data.Array.Accelerate.IO.Data.Vector.Storable (fromVectors)
@@ -25,20 +27,14 @@ import Data.Vector.Storable.ByteString
 
 import qualified Config.Constants as C
 
-loadDataset'
-  :: C.HasPatchSize s Int
-  => s
-  -> FilePath -- ^ file location
-  -> IO (Array DIM3 Int8)
-loadDataset' c = loadDataset (c ^. C.imageSize)
-
 loadDataset
-  :: DIM2 -- ^ image size, (ydim,xdim)
-  -> FilePath -- ^ file location
-  -> IO (Array DIM3 Int8) -- ^ Array of size (numimages,ydim,xdim)
-loadDataset (Z :. y :. x) fp =
+  :: C.HasPatchSize c Int
+  => FilePath -- ^ file location
+  -> ReaderT c IO (Array DIM3 Int8) -- ^ Array of size (numimages,ydim,xdim)
+loadDataset fp =
   do
-    bytes <- BS.readFile fp
+    (Z :. y :. x) <- view C.imageSize
+    bytes <- liftIO $ BS.readFile fp
     let
       v = byteStringToVector bytes :: V.Vector Int8
       len = V.length v `div` (y*x)
@@ -96,21 +92,17 @@ scaleDataset inputMult dt =
   in
     A.map (* A.constant multiplier)
 
-fullDatasetAugmentation'
-  :: ( C.HasDt s Float
-     , C.HasInputMult s Float
-     )
-  => s
-  -> Acc (Array DIM3 Int8)
-  -> Acc (Array DIM2 Float)
-fullDatasetAugmentation' c =
-  fullDatasetAugmentation (c ^. C.inputMult) (c ^. C.dt)
-
 -- | transform, normalize and scale dataset
 fullDatasetAugmentation
-  :: Float -- ^ inputMult
-  -> Float -- ^ dt
-  -> Acc (Array DIM3 Int8) -- ^ raw dataset
-  -> Acc (Array DIM2 Float) -- ^ (numImages, 2*ydim*xdim)
-fullDatasetAugmentation inputMult dt =
-  scaleDataset inputMult dt . normalizeDataset . transformDataset
+  :: (C.HasDt c Float, C.HasInputMult c Float)
+  => Array DIM3 Int8 -- ^ raw dataset
+  -> ReaderT c IO (Array DIM2 Float) -- ^ (numImages, 2*ydim*xdim)
+fullDatasetAugmentation dataset =
+  do
+    inputMult <- view C.inputMult
+    dt <- view C.dt
+    let !dataset' =
+          run1 (scaleDataset inputMult dt .
+                normalizeDataset .
+                transformDataset) dataset
+    dataset' `seq` return dataset'
