@@ -23,7 +23,7 @@ import Data.Array.Accelerate.Control.Lens.Shape
 import Data.Array.Accelerate.Data.Bits as A
 import qualified Data.Array.Accelerate.Extra as A
 
-import Data.Array.Accelerate.LLVM.PTX
+import Data.Array.Accelerate.LLVM.Native
 import Data.Array.Accelerate.Numeric.LinearAlgebra
 
 import Data.Array.Accelerate.System.Random.MWC
@@ -74,7 +74,7 @@ main =
       f = run1 g
       g =
         (\s ->
-           A.aiterate' 1000
+           A.aiterate' 20000
            (\numpres stup ->
               let
                 s' = S.unliftAccState stup
@@ -101,18 +101,14 @@ main =
     print g
     print g
     t4 <- getCurrentTime
-    let !s = f (S.stateToStateTup initialState)
-    (S.stateTupToState $ f s) `deepseq` print "done"
-
---    (S.stateTupToState $ f (S.stateToStateTup initialState)) `deepseq` print "done"
-    --print "done"
+    (S.stateTupToState $ f (S.stateToStateTup initialState)) `deepseq` print "done"
     t1 <- getCurrentTime
     print $ diffUTCTime t1 t4
     (S.stateTupToState $ f (S.stateToStateTup initialState')) `deepseq` print "done"
     print "done1"
     t2 <- getCurrentTime
+    print $ diffUTCTime t2 t1
     (S.stateTupToState $ f (S.stateToStateTup initialState'')) `deepseq` print "done"
     print "done2"
     t3 <- getCurrentTime
-    print $ diffUTCTime t2 t1
     print $ diffUTCTime t3 t2
