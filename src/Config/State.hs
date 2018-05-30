@@ -73,6 +73,28 @@ stateToStateTup s =
   , s ^. stateExistingSpikes
   )
 
+stateTupToState :: StateTup -> State
+stateTupToState s =
+  let
+    (w,wff,v,vprev,vthresh,vneg,vpos,vlongtrace,xplastlat,xplastff,isspiking,wadap,z,existingSpikes) = s
+  in
+    State
+    { _stateW = w
+    , _stateWff = wff
+    , _stateV = v
+    , _stateVPrev = vprev
+    , _stateVThresh = vthresh
+    , _stateVNeg = vneg
+    , _stateVPos = vpos
+    , _stateVLongTrace = vlongtrace
+    , _stateXPlastLat = xplastlat
+    , _stateXPlastFF = xplastff
+    , _stateIsSpiking = isspiking
+    , _stateWadap = wadap
+    , _stateZ = z
+    , _stateExistingSpikes = existingSpikes
+    }
+
 type StateTup =
   ( Matrix Float -- w
   , Matrix Float -- wff

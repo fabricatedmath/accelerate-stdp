@@ -37,6 +37,7 @@ dependencies:
 - bytestring
 - random-fu
 - random-source
+- time
 
 
 library:

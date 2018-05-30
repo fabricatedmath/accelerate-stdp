@@ -29,6 +29,20 @@ import qualified Config.State as S
 -- | Adds an incoming spike at delay location of neuron
 --
 -- Spikes are represented as a queue of length delay in bit shifts
+addIncomingSpikes
+  :: Monad m
+  => Matrix Int -- ^ delays
+  -> Acc (Matrix Bool) -- ^ incoming spikes
+  -> EnvT m ()
+addIncomingSpikes delays incomingSpikes =
+  do
+    existingSpikes <- use S.accStateExistingSpikes
+    let
+      f d i e = (A.boolToInt i) * bit d .|. e
+      existingSpikes' =
+          A.zipWith3 f (A.use delays) incomingSpikes existingSpikes
+    S.accStateExistingSpikes .= existingSpikes'
+
 addIncomingSpike
   :: Exp Int -- ^ delay num steps
   -> Exp Int -- ^ existing spikes
@@ -40,9 +54,16 @@ addIncomingSpike delay existingSpikes incomingSpike =
 -- | Advances queued spikes by 1
 -- spikes are represented as a queue of length delay in bit shifts
 ratchetSpikes
-  :: Exp Int -- ^ existing spikes
-  -> Exp (Bool, Int) -- ^ (is a spike, existing spikes')
-ratchetSpikes i = A.lift (testBit i 0, shiftR i 1)
+  :: Monad m
+  => EnvT m (Acc (Matrix Bool))
+ratchetSpikes =
+  do
+    existingSpikes <- use S.accStateExistingSpikes
+    let
+      ratchetSpikes' i = A.lift (testBit i 0, shiftR i 1)
+      (spikes,existingSpikes') = A.unzip $ A.map ratchetSpikes' existingSpikes
+    S.accStateExistingSpikes .= existingSpikes'
+    return spikes
 
 -- | Computes inputs with iFF iLat and noise
 -- TODO: add NOELAT and NOLAT support
@@ -68,20 +89,30 @@ computeInputs posNoiseSlice negNoiseSlice spikes lgnfirings =
 -- | Slice noise out of posNoiseIn or negNoiseIn modulus the numStep
 pullNoise
   :: Matrix Float -- ^ noiseIn
-  -> Acc (Scalar Int) -- ^ numStep
+  -> Exp Int -- ^ numStep
   -> Acc (Vector Float) -- ^ noise slice
 pullNoise noiseIn numStep =
   let
     (Z :. ydim :. _xdim) = A.arrayShape noiseIn
-    noiseStepIndex = A.mod (A.the numStep) $ A.constant ydim
+    noiseStepIndex = A.mod numStep $ A.constant ydim
   in A.slice (A.use noiseIn) (A.lift $ Z :. noiseStepIndex :. All)
 
 pullImage
   :: Matrix Float -- ^ dataset
-  -> Acc (Scalar Int) -- ^ numpres
+  -> Exp Int -- ^ numpres
   -> Acc (Vector Float) -- ^ image
 pullImage dataset numPres =
   let
     (Z :. ydim :. _xdim) = A.arrayShape dataset
-    imageStepIndex = A.mod (A.the numPres) $ A.constant ydim
+    imageStepIndex = A.mod numPres $ A.constant ydim
   in A.slice (A.use dataset) (A.lift $ Z :. imageStepIndex :. All)
+
+pull
+  :: Matrix Float -- ^ dataset
+  -> Exp Int -- ^ slice
+  -> Acc (Vector Float) -- ^ slice
+pull dataset slice =
+  let
+    (Z :. ydim :. _xdim) = A.arrayShape dataset
+    stepIndex = A.mod slice $ A.constant ydim
+  in A.slice (A.use dataset) (A.lift $ Z :. stepIndex :. All)
