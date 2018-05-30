@@ -23,7 +23,7 @@ import Data.Array.Accelerate.Control.Lens.Shape
 import Data.Array.Accelerate.Data.Bits as A
 import qualified Data.Array.Accelerate.Extra as A
 
-import Data.Array.Accelerate.LLVM.Native
+import Data.Array.Accelerate.LLVM.PTX
 import Data.Array.Accelerate.Numeric.LinearAlgebra
 
 import Data.Array.Accelerate.System.Random.MWC
@@ -59,22 +59,21 @@ main :: IO ()
 main =
   do
     let constants = C.defaultConstants
-    lgnfiringsNoise <- runReaderT generateLgnFiringsNoise constants
     !initialState <- runReaderT initState constants
     !initialState' <- runReaderT initState constants
     !initialState'' <- runReaderT initState constants
-    delays <- runReaderT initDelays constants
-    posNoiseIn <- runReaderT initPosNoiseIn constants
-    negNoiseIn <- runReaderT initNegNoiseIn constants
-    altds <- runReaderT initALTDS constants
-    dataset <-
+    !delays <- runReaderT initDelays constants
+    !posNoiseIn <- runReaderT initPosNoiseIn constants
+    !negNoiseIn <- runReaderT initNegNoiseIn constants
+    !altds <- runReaderT initALTDS constants
+    !dataset <-
       runReaderT (loadDataset "dog.dat" >>= fullDatasetAugmentation) constants
-    rsData <- runReaderT generateLgnFiringsNoise constants
+    !rsData <- runReaderT generateLgnFiringsNoise constants
     let
       f = run1 g
       g =
         (\s ->
-           A.aiterate' 20000
+           A.aiterate' 10000
            (\numpres stup ->
               let
                 s' = S.unliftAccState stup
@@ -87,18 +86,19 @@ main =
                 negNoiseSlice = pullNoise negNoiseIn numpres
                 m =
                   do
-                    spikes <- ratchetSpikes
+                    --spikes <- ratchetSpikes
+                    numNeurons <- view C.numNeurons
+                    let spikes = A.fill (A.constant $ Z :. numNeurons :. numNeurons) $ A.constant False
                     inputs <-
                       computeInputs posNoiseSlice negNoiseSlice spikes lgnfirings
                     preSpikeUpdate inputs
-                    firings <- spikeUpdate (A.use delays)
+                    firings <- spikeUpdate delays
                     postSpikeUpdate firings lgnfirings
                     learning (A.use altds) lgnfirings spikes
               in
                 S.liftAccState $ execEnv m constants s'
            ) s
         )
-    print g
     print g
     t4 <- getCurrentTime
     (S.stateTupToState $ f (S.stateToStateTup initialState)) `deepseq` print "done"

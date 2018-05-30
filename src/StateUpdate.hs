@@ -84,7 +84,7 @@ preSpikeUpdate inputs =
       S.accStateIsSpiking .= (A.map (A.max 0) $ A.map (subtract 1) isSpiking)
 
 spikeUpdate
-  :: Acc (Matrix Int) -- ^ delays
+  :: Matrix Int -- ^ delays
   -> Env (Acc (Vector Bool)) -- ^ firings
 spikeUpdate delays =
   do
@@ -116,13 +116,11 @@ spikeUpdate delays =
             S.accStateIsSpiking .= A.zipWith f isSpiking firings
 
           do -- existingSpikes
-            existingSpikes <- use S.accStateExistingSpikes
             numNeurons <- view C.numNeurons
             let
               incomingSpikes =
                 A.replicate (A.constant $ Z :. numNeurons :. All) firings
-            S.accStateExistingSpikes .=
-              A.zipWith3 addIncomingSpike delays existingSpikes incomingSpikes
+            addIncomingSpikes delays incomingSpikes
 
           return firings
 

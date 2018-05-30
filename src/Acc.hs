@@ -43,14 +43,6 @@ addIncomingSpikes delays incomingSpikes =
           A.zipWith3 f (A.use delays) incomingSpikes existingSpikes
     S.accStateExistingSpikes .= existingSpikes'
 
-addIncomingSpike
-  :: Exp Int -- ^ delay num steps
-  -> Exp Int -- ^ existing spikes
-  -> Exp Bool -- ^ incoming spike
-  -> Exp Int -- ^ existing spikes'
-addIncomingSpike delay existingSpikes incomingSpike =
-  (A.boolToInt incomingSpike) * bit delay .|. existingSpikes
-
 -- | Advances queued spikes by 1
 -- spikes are represented as a queue of length delay in bit shifts
 ratchetSpikes
