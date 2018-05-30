@@ -60,9 +60,9 @@ main =
   do
     let constants = C.defaultConstants
     lgnfiringsNoise <- runReaderT generateLgnFiringsNoise constants
-    initialState <- runReaderT initState constants
-    initialState' <- runReaderT initState constants
-    initialState'' <- runReaderT initState constants
+    !initialState <- runReaderT initState constants
+    !initialState' <- runReaderT initState constants
+    !initialState'' <- runReaderT initState constants
     delays <- runReaderT initDelays constants
     posNoiseIn <- runReaderT initPosNoiseIn constants
     negNoiseIn <- runReaderT initNegNoiseIn constants
@@ -71,10 +71,10 @@ main =
       runReaderT (loadDataset "dog.dat" >>= fullDatasetAugmentation) constants
     rsData <- runReaderT generateLgnFiringsNoise constants
     let
-      f =
-        run1
+      f = run1 g
+      g =
         (\s ->
-           A.aiterate' 10000
+           A.aiterate' 1000
            (\numpres stup ->
               let
                 s' = S.unliftAccState stup
@@ -98,10 +98,16 @@ main =
                 S.liftAccState $ execEnv m constants s'
            ) s
         )
-    (S.stateTupToState $ f (S.stateToStateTup initialState)) `deepseq` print "done"
-    print $ f $ S.stateToStateTup initialState
-    print "done"
+    print g
+    print g
+    t4 <- getCurrentTime
+    let !s = f (S.stateToStateTup initialState)
+    (S.stateTupToState $ f s) `deepseq` print "done"
+
+--    (S.stateTupToState $ f (S.stateToStateTup initialState)) `deepseq` print "done"
+    --print "done"
     t1 <- getCurrentTime
+    print $ diffUTCTime t1 t4
     (S.stateTupToState $ f (S.stateToStateTup initialState')) `deepseq` print "done"
     print "done1"
     t2 <- getCurrentTime

@@ -42,6 +42,8 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:
+    - -O2
 
 executables:
   V1Acc-exe:
@@ -50,7 +52,10 @@ executables:
     ghc-options:
     - -threaded
     - -rtsopts
+    - -O2
     - -with-rtsopts=-N
+    - -with-rtsopts=-n2M
+    - -with-rtsopts=-A64M
     dependencies:
     - V1Acc
 
