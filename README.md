@@ -1,1 +1,1 @@
-# V1Acc
+# accelerate-stdp
