@@ -32,15 +32,20 @@ import qualified Config.State as S
 addIncomingSpikes
   :: Monad m
   => Matrix Int -- ^ delays
-  -> Acc (Matrix Bool) -- ^ incoming spikes
+  -> Acc (Vector Bool) -- ^ firings
   -> EnvT m ()
-addIncomingSpikes delays incomingSpikes =
+addIncomingSpikes delays firings =
   do
     existingSpikes <- use S.accStateExistingSpikes
     let
-      f d i e = (A.boolToInt i) * bit d .|. e
+      f sh d e =
+        let
+          (_y,x) = A.unlift $ A.unindex2 sh :: (Exp Int, Exp Int)
+          i = firings A.! (A.index1 x)
+        in
+          (A.boolToInt i) * bit d .|. e
       existingSpikes' =
-          A.zipWith3 f (A.use delays) incomingSpikes existingSpikes
+          A.izipWith f (A.use delays) existingSpikes
     S.accStateExistingSpikes .= existingSpikes'
 
 -- | Advances queued spikes by 1
@@ -85,7 +90,7 @@ pullNoise
   -> Acc (Vector Float) -- ^ noise slice
 pullNoise noiseIn numStep =
   let
-    (Z :. ydim :. _xdim) = A.arrayShape noiseIn
+    (Z :. ydim :. xdim) = A.arrayShape noiseIn
     noiseStepIndex = A.mod numStep $ A.constant ydim
   in A.slice (A.use noiseIn) (A.lift $ Z :. noiseStepIndex :. All)
 
@@ -105,6 +110,12 @@ pull
   -> Acc (Vector Float) -- ^ slice
 pull dataset slice =
   let
-    (Z :. ydim :. _xdim) = A.arrayShape dataset
+    (Z :. ydim :. xdim) = A.arrayShape dataset
     stepIndex = A.mod slice $ A.constant ydim
-  in A.slice (A.use dataset) (A.lift $ Z :. stepIndex :. All)
+    f sh =
+      let
+       x = A.unlift $ A.unindex1 sh
+      in
+        (A.use dataset) A.! (A.index2 stepIndex x)
+  in
+    A.generate (A.constant $ Z :. xdim) f

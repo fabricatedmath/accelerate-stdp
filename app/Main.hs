@@ -55,6 +55,26 @@ import Dataset
 import Inits
 import StateUpdate
 
+{- timing test
+main :: IO ()
+main =
+  do
+    !rs <- randomArray uniform (Z :. 1 :. 1) :: IO (Matrix Float)
+    !rs2 <- randomArray uniform (Z :. 1 :. 1) :: IO (Matrix Float)
+    let
+      f :: Acc (Matrix Float, Matrix Float) -> Acc (Matrix Float, Matrix Float)
+      f = A.aiterate' 10000
+        (\numpres arr ->
+           let (rs',rs2') = A.unlift arr :: (Acc (Matrix Float), Acc (Matrix Float))
+           in
+             A.lift (A.map (+(A.fromIntegral $ A.the numpres)) rs', rs2')
+        )
+    t2 <- getCurrentTime
+    (run1 f (rs,rs2)) `seq` print "done"
+    t1 <- getCurrentTime
+    print $ diffUTCTime t1 t2
+-}
+
 main :: IO ()
 main =
   do
@@ -77,18 +97,17 @@ main =
            (\numpres stup ->
               let
                 s' = S.unliftAccState stup
-                image = pullImage dataset numpres
-                rs = pull rsData numpres
+                image = pull dataset $ A.the numpres
+                rs = pull rsData $ A.the numpres
                 lgnfirings =
                   A.zipWith (\i r -> A.fromIntegral $ A.boolToInt $ r A.< i) image rs
                   :: Acc (Vector Float)
-                posNoiseSlice = pullNoise posNoiseIn numpres
-                negNoiseSlice = pullNoise negNoiseIn numpres
+                posNoiseSlice = pull posNoiseIn $ A.the numpres
+                negNoiseSlice = pull negNoiseIn $ A.the numpres
                 m =
                   do
-                    --spikes <- ratchetSpikes
+                    spikes <- ratchetSpikes
                     numNeurons <- view C.numNeurons
-                    let spikes = A.fill (A.constant $ Z :. numNeurons :. numNeurons) $ A.constant False
                     inputs <-
                       computeInputs posNoiseSlice negNoiseSlice spikes lgnfirings
                     preSpikeUpdate inputs

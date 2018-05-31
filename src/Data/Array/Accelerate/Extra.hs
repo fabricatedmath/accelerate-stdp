@@ -31,13 +31,13 @@ aiterate n' f' arr =
 aiterate'
   :: forall a. Arrays a
   => Exp Int
-  -> (Exp Int -> Acc a -> Acc a)
+  -> (Acc (Scalar Int) -> Acc a -> Acc a)
   -> Acc a
   -> Acc a
 aiterate' n' f' arr =
   let
     stoppingCond = A.map (A.< n') . A.asnd
-    f acc = A.lift (f' (A.the n) a, A.map (+1) n)
+    f acc = A.lift (f' n a, A.map (+1) n)
       where (a,n) = A.unlift acc
   in
     A.afst $ A.awhile stoppingCond f $ A.lift (arr,A.unit 0)

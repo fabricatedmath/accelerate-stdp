@@ -151,7 +151,7 @@ initPosNoiseIn =
     vstim <- A.constant <$> view C.vstim
     let dim = Z :. numNoiseSteps :. numNeurons
     !rs <- liftIO $ randomArray (poisson posNoiseRate) dim
-    let !arr = run1 (A.map (A.negate . (* vstim))) rs
+    let !arr = run1 (A.map ((* vstim))) rs
     return arr
 
 initNegNoiseIn

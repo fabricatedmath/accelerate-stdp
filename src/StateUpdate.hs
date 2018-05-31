@@ -63,14 +63,14 @@ preSpikeUpdate inputs =
       isSpiking <- use S.accStateIsSpiking
       constIsp <- A.constant <$> view C.constIsp
       let f si zi = si A.== 1 A.? (constIsp,zi)
-      S.accStateZ .= A.zipWith f isSpiking z
+      S.accStateZ .= (A.zipWith f isSpiking z)
 
     do -- vthresh
       vthresh <- use S.accStateVThresh
       isSpiking <- use S.accStateIsSpiking
       vtMax <- A.constant <$> view C.vtMax
       let f si vti = si A.== 1 A.? (vtMax,vti)
-      S.accStateVThresh .= A.zipWith f isSpiking vthresh
+      S.accStateVThresh .= (A.zipWith f isSpiking vthresh)
 
     do -- wadap
       wadap <- use S.accStateWadap
@@ -82,6 +82,7 @@ preSpikeUpdate inputs =
     do -- isSpiking
       isSpiking <- use S.accStateIsSpiking
       S.accStateIsSpiking .= (A.map (A.max 0) $ A.map (subtract 1) isSpiking)
+
 
 spikeUpdate
   :: Matrix Int -- ^ delays
@@ -102,25 +103,20 @@ spikeUpdate delays =
               v <- use S.accStateV
               vpeak <- A.constant <$> view C.vPeak
               return $ A.map (A.> vpeak) v
-
           do -- v
             v <- use S.accStateV
             vpeak <- A.constant <$> view C.vPeak
             let f vi fi = fi A.? (vpeak,vi)
-            S.accStateV .= A.zipWith f v firings
+            S.accStateV .= (A.zipWith f v firings)
 
           do -- isspiking
             isSpiking <- use S.accStateIsSpiking
             numSpikingSteps <- A.constant <$> view C.numSpikingSteps
             let f si fi = fi A.? (numSpikingSteps,si)
-            S.accStateIsSpiking .= A.zipWith f isSpiking firings
+            S.accStateIsSpiking .= (A.zipWith f isSpiking firings)
 
           do -- existingSpikes
-            numNeurons <- view C.numNeurons
-            let
-              incomingSpikes =
-                A.replicate (A.constant $ Z :. numNeurons :. All) firings
-            addIncomingSpikes delays incomingSpikes
+            addIncomingSpikes delays firings
 
           return firings
 
