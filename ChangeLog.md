@@ -1,3 +1,3 @@
-# Changelog for V1Acc
+# Changelog for accelerate-stdp
 
 ## Unreleased changes
